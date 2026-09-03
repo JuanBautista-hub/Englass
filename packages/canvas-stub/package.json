@@ -1,0 +1,7 @@
+{
+  "name": "@engclass/canvas-stub",
+  "version": "1.0.0",
+  "description": "No-op canvas stub for environments without native canvas (e.g. Windows CI).",
+  "main": "index.cjs",
+  "files": ["index.cjs", "README.md"]
+}

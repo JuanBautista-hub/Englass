@@ -1,0 +1,23 @@
+{
+  "name": "engclass",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Engclass monorepo (Fase 1). Educational PDF annotation system.",
+  "type": "module",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' --filter './apps/*' build",
+    "test": "pnpm -r --filter './packages/*' --filter './apps/*' test",
+    "lint": "pnpm -r --filter './packages/*' --filter './apps/*' lint",
+    "typecheck": "pnpm -r --filter './packages/*' --filter './apps/*' typecheck"
+  },
+  "pnpm": {
+    "overrides": {
+      "canvas@2.11.2": "npm:@engclass/canvas-stub@1.0.0"
+    }
+  }
+}
