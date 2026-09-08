@@ -2,11 +2,9 @@ import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DueCard, Rating, ReviewService } from '../../core/services/review.service';
 import { MasteryLabelsService } from '../../core/services/mastery-labels.service';
-import {
-  BilingualSegment,
-  parseBilingual,
-  TtsService,
-} from '../../core/services/tts.service';
+import { TtsSegmentsService } from '../../core/services/tts-segments.service';
+import { TtsService } from '../../core/services/tts.service';
+import { BilingualSegment } from '../../core/models';
 
 interface SessionSummary {
   total: number;
@@ -228,6 +226,7 @@ export class StudyPage implements OnInit {
   private readonly review = inject(ReviewService);
   private readonly masteryLabels = inject(MasteryLabelsService);
   private readonly tts = inject(TtsService);
+  private readonly ttsSegments = inject(TtsSegmentsService);
 
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
@@ -315,16 +314,17 @@ export class StudyPage implements OnInit {
   }
 
   segmentsOf(card: DueCard): BilingualSegment[] {
-    if (!card.explanationEs) {
-      return [];
-    }
     const cached = this.segmentsCache.get(card.cardId);
     if (cached) {
       return cached;
     }
-    const parsed = parseBilingual(card.explanationEs);
-    this.segmentsCache.set(card.cardId, parsed);
-    return parsed;
+    if (!card.explanationEs) {
+      return [];
+    }
+    this.ttsSegments.get(card.cardId)
+      .then((segs) => this.segmentsCache.set(card.cardId, segs))
+      .catch(() => {});
+    return [];
   }
 
   segmentClass(card: DueCard, seg: BilingualSegment, index: number): string {
@@ -369,11 +369,18 @@ export class StudyPage implements OnInit {
     }
     this.tts.cancel();
     this.speaking.set(true);
-    const segments = this.segmentsOf(card);
+    let segments: BilingualSegment[];
+    try {
+      segments = await this.ttsSegments.get(card.cardId);
+      this.segmentsCache.set(card.cardId, segments);
+    } catch {
+      this.speaking.set(false);
+      return;
+    }
     this.bilingualTotal.set(segments.length);
     this.bilingualIndex.set(0);
     try {
-      await this.tts.speakBilingual(card.explanationEs, {
+      await this.tts.speakSegments(segments, {
         rate: 0.95,
         onSegment: (_seg, index, total) => {
           this.bilingualIndex.set(index);

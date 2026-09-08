@@ -12,6 +12,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { LearningPathModule } from './learning-path/learning-path.module';
 import { AchievementsModule } from './achievements/achievements.module';
 import { LabelsModule } from './labels/labels.module';
+import { TtsSegmentsModule } from './tts-segments/tts-segments.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -29,6 +30,7 @@ import { HealthController } from './health/health.controller';
     LearningPathModule,
     AchievementsModule,
     LabelsModule,
+    TtsSegmentsModule,
   ],
   controllers: [HealthController],
 })

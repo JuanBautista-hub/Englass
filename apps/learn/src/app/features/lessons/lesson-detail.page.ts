@@ -4,12 +4,9 @@ import { UpperCasePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { LessonsService } from '../../core/services/lessons.service';
 import { MasteryLabelsService } from '../../core/services/mastery-labels.service';
-import {
-  BilingualSegment,
-  parseBilingual,
-  TtsService,
-} from '../../core/services/tts.service';
-import { Lesson, Mastery, VocabularyCard } from '../../core/models';
+import { TtsSegmentsService } from '../../core/services/tts-segments.service';
+import { TtsService } from '../../core/services/tts.service';
+import { BilingualSegment, Lesson, Mastery, VocabularyCard } from '../../core/models';
 
 interface CardSpeechState {
   speaking: 'en' | 'es' | null;
@@ -148,7 +145,7 @@ interface BilingualPlayback {
                   Explicación en español
                 </summary>
                 <div class="mt-2 text-slate-600 text-sm leading-relaxed">
-                  @for (seg of segmentsOf(c.id, c.explanationEs!); track $index) {
+                  @for (seg of segmentsOf(c.id); track $index) {
                     <span
                       [class]="segmentClass(c.id, seg, $index)"
                     >{{ seg.text }}</span>
@@ -166,7 +163,7 @@ interface BilingualPlayback {
                   <button
                     type="button"
                     class="px-2.5 py-1 text-xs rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-                    (click)="speakBilingualForCard(c.explanationEs!, c.id)"
+                    (click)="speakBilingualForCard(c.id)"
                     [disabled]="isSpeaking(c.id) || !ttsSupported()"
                     title="Lee la explicación en español y los ejemplos entre comillas en inglés"
                   >
@@ -245,6 +242,7 @@ export class LessonDetailPage implements OnInit, OnDestroy {
   private readonly lessons = inject(LessonsService);
   private readonly masteryLabels = inject(MasteryLabelsService);
   private readonly tts = inject(TtsService);
+  private readonly ttsSegments = inject(TtsSegmentsService);
 
   protected readonly lesson = signal<Lesson | null>(null);
   protected readonly loading = signal(true);
@@ -303,14 +301,15 @@ export class LessonDetailPage implements OnInit, OnDestroy {
     return bp && bp.cardId === cardId ? bp : null;
   }
 
-  segmentsOf(cardId: string, text: string): BilingualSegment[] {
+  segmentsOf(cardId: string): BilingualSegment[] {
     const cached = this.segmentsCache.get(cardId);
     if (cached) {
       return cached;
     }
-    const parsed = parseBilingual(text);
-    this.segmentsCache.set(cardId, parsed);
-    return parsed;
+    this.ttsSegments.get(cardId)
+      .then((segs) => this.segmentsCache.set(cardId, segs))
+      .catch(() => {});
+    return [];
   }
 
   segmentClass(cardId: string, seg: BilingualSegment, index: number): string {
@@ -363,16 +362,19 @@ export class LessonDetailPage implements OnInit, OnDestroy {
     return this.speak(text, cardId, 'es', null);
   }
 
-  async speakBilingualForCard(text: string, cardId: string): Promise<void> {
-    if (!text) {
-      return;
-    }
+  async speakBilingualForCard(cardId: string): Promise<void> {
     this.tts.cancel();
     this.patchSpeech(cardId, { speaking: null, field: 'bilingual', error: null });
-    const segments = this.segmentsOf(cardId, text);
+    let segments: BilingualSegment[];
+    try {
+      segments = await this.ttsSegments.get(cardId);
+      this.segmentsCache.set(cardId, segments);
+    } catch {
+      return;
+    }
     this.bilingualPlayback.set({ cardId, index: 0, total: segments.length });
     try {
-      await this.tts.speakBilingual(text, {
+      await this.tts.speakSegments(segments, {
         rate: 0.95,
         onSegment: (_seg, index, total) => {
           this.bilingualPlayback.set({ cardId, index, total });
