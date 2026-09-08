@@ -1,12 +1,36 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { CreateCardDto } from './dto/create-card.dto';
 import { SYSTEM_USER_ID } from '../common/constants';
+import { APP_CONFIG, type AppConfig } from '../common/config';
 import { initialSrsState } from '../srs/sm2';
 import { computeMastery, type Mastery } from '../srs/mastery';
 import { LEVEL_ORDER, LEVEL_RANK } from '../labels/labels.constants';
+import type {
+  EnrollResult,
+  LessonCardView,
+  LessonPermissionFlags,
+  LessonView,
+} from '@engclass/shared';
+import {
+  computeFlags,
+  emptyFlags,
+  isCatalogLessonOwnedByOtherUser,
+  lessonRowToWire,
+  ownerFlags,
+  type CardViewMinimal,
+  type LessonRowMinimal,
+} from './lesson.flags';
+
+export type { LessonCardView, LessonView, LessonPermissionFlags, EnrollResult };
 
 export interface CardView {
   id: string;
@@ -19,19 +43,6 @@ export interface CardView {
   level: string;
   ordinal: number;
   mastery: Mastery | null;
-}
-
-export interface LessonView {
-  id: string;
-  title: string;
-  description: string | null;
-  level: string;
-  categoryId: string;
-  ownerId: string;
-  sourceLessonId: string | null;
-  cards: CardView[];
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface CatalogLessonSummary {
@@ -84,7 +95,7 @@ export interface OwnedLessonsByLevelGroup {
   lessons: OwnedLessonSummary[];
 }
 
-type LessonRow = {
+interface PrismaLessonWithCards {
   id: string;
   title: string;
   description: string | null;
@@ -94,28 +105,26 @@ type LessonRow = {
   sourceLessonId: string | null;
   createdAt: Date;
   updatedAt: Date;
-  cards?: CardRow[];
-};
-
-type CardRow = {
-  id: string;
-  term: string;
-  definition: string;
-  example: string | null;
-  translation: string | null;
-  explanationEs: string | null;
-  audioKey: string | null;
-  level: string;
-  ordinal: number;
-  progress?: Array<{
-    repetitions: number;
-    easeFactor: number;
-    intervalDays: number;
+  cards: Array<{
+    id: string;
+    term: string;
+    definition: string;
+    example: string | null;
+    translation: string | null;
+    explanationEs: string | null;
+    audioKey: string | null;
+    level: string;
+    ordinal: number;
+    progress?: Array<{
+      repetitions: number;
+      easeFactor: number;
+      intervalDays: number;
+    }>;
   }>;
-};
+}
 
-function toCardView(row: CardRow): CardView {
-  const cp = row.progress?.[0];
+function toCardView(card: PrismaLessonWithCards['cards'][number]): CardView {
+  const cp = card.progress?.[0];
   const mastery = cp
     ? computeMastery({
         repetitions: cp.repetitions,
@@ -124,20 +133,61 @@ function toCardView(row: CardRow): CardView {
       })
     : null;
   return {
-    id: row.id,
-    term: row.term,
-    definition: row.definition,
-    example: row.example,
-    translation: row.translation,
-    explanationEs: row.explanationEs,
-    audioKey: row.audioKey,
-    level: row.level,
-    ordinal: row.ordinal,
+    id: card.id,
+    term: card.term,
+    definition: card.definition,
+    example: card.example,
+    translation: card.translation,
+    explanationEs: card.explanationEs,
+    audioKey: card.audioKey,
+    level: card.level,
+    ordinal: card.ordinal,
     mastery,
   };
 }
 
-function toLessonView(row: LessonRow): LessonView {
+function cardsToMinimal(cards: CardView[]): CardViewMinimal[] {
+  return cards.map((c) => ({
+    id: c.id,
+    term: c.term,
+    definition: c.definition,
+    example: c.example,
+    translation: c.translation,
+    explanationEs: c.explanationEs,
+    audioKey: c.audioKey,
+    level: c.level,
+    ordinal: c.ordinal,
+    mastery: c.mastery,
+  }));
+}
+
+function cardRowToMinimal(
+  cards: PrismaLessonWithCards['cards'],
+): CardViewMinimal[] {
+  return cards.map((c) => {
+    const mastery = c.progress?.[0]
+      ? computeMastery({
+          repetitions: c.progress[0].repetitions,
+          easeFactor: c.progress[0].easeFactor,
+          intervalDays: c.progress[0].intervalDays,
+        })
+      : null;
+    return {
+      id: c.id,
+      term: c.term,
+      definition: c.definition,
+      example: c.example,
+      translation: c.translation,
+      explanationEs: c.explanationEs,
+      audioKey: c.audioKey,
+      level: c.level,
+      ordinal: c.ordinal,
+      mastery,
+    };
+  });
+}
+
+function toRowMinimal(row: PrismaLessonWithCards): LessonRowMinimal {
   return {
     id: row.id,
     title: row.title,
@@ -146,16 +196,22 @@ function toLessonView(row: LessonRow): LessonView {
     categoryId: row.categoryId,
     ownerId: row.ownerId,
     sourceLessonId: row.sourceLessonId,
-    cards: (row.cards ?? []).map(toCardView),
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
 @Injectable()
 export class LessonsService {
   private readonly logger = new Logger(LessonsService.name);
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly flagsEnabled: boolean;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(APP_CONFIG) config: AppConfig,
+  ) {
+    this.flagsEnabled = config.lessonsViewFlagsEnabled;
+  }
 
   async list(ownerId: string): Promise<LessonView[]> {
     const rows = await this.prisma.lesson.findMany({
@@ -163,37 +219,85 @@ export class LessonsService {
       orderBy: { createdAt: 'desc' },
       include: { cards: { orderBy: { ordinal: 'asc' } } },
     });
-    return rows.map((r) => toLessonView({ ...r, ownerId }));
+    return rows.map((r) =>
+      lessonRowToWire(
+        toRowMinimal(r),
+        this.flagsEnabled ? ownerFlags() : emptyFlags(),
+        cardRowToMinimal(r.cards),
+      ),
+    );
   }
 
-  async findOne(id: string, ownerId: string): Promise<LessonView> {
-    const row = await this.prisma.lesson.findUnique({
+  async findOne(id: string, userId: string): Promise<LessonView> {
+    const row = (await this.prisma.lesson.findUnique({
       where: { id },
       include: {
         cards: {
           orderBy: { ordinal: 'asc' },
-          include: { progress: { where: { userId: ownerId } } },
+          include: { progress: { where: { userId } } },
         },
       },
-    });
+    })) as PrismaLessonWithCards | null;
     if (!row) {
       throw new NotFoundException('lesson_not_found');
     }
-    if (row.ownerId !== ownerId) {
-      throw new ForbiddenException('lesson_not_owned');
+    if (!this.flagsEnabled) {
+      if (row.ownerId !== userId) {
+        throw new ForbiddenException('lesson_not_owned');
+      }
+      return lessonRowToWire(
+        toRowMinimal(row),
+        ownerFlags(),
+        cardRowToMinimal(row.cards),
+      );
     }
-    return toLessonView(row);
+    if (isCatalogLessonOwnedByOtherUser(row, userId)) {
+      throw new NotFoundException('lesson_not_found');
+    }
+    let alreadyEnrolled = false;
+    if (row.ownerId === SYSTEM_USER_ID) {
+      const clone = await this.prisma.lesson.findFirst({
+        where: { ownerId: userId, sourceLessonId: row.id },
+        select: { id: true },
+      });
+      alreadyEnrolled = clone !== null;
+    }
+    return lessonRowToWire(
+      toRowMinimal(row),
+      computeFlags(row, userId, alreadyEnrolled),
+      cardRowToMinimal(row.cards),
+    );
   }
 
-  async findOneAsCatalog(id: string): Promise<LessonView> {
-    const row = await this.prisma.lesson.findUnique({
+  async findOneAsCatalog(id: string, userId?: string): Promise<LessonView> {
+    const row = (await this.prisma.lesson.findUnique({
       where: { id },
       include: { cards: { orderBy: { ordinal: 'asc' } } },
-    });
+    })) as PrismaLessonWithCards | null;
     if (!row) {
       throw new NotFoundException('lesson_not_found');
     }
-    return toLessonView(row);
+    const effectiveUserId = userId ?? SYSTEM_USER_ID;
+    if (!this.flagsEnabled) {
+      return lessonRowToWire(
+        toRowMinimal(row),
+        ownerFlags(),
+        cardRowToMinimal(row.cards),
+      );
+    }
+    let alreadyEnrolled = false;
+    if (row.ownerId === SYSTEM_USER_ID && userId) {
+      const clone = await this.prisma.lesson.findFirst({
+        where: { ownerId: userId, sourceLessonId: row.id },
+        select: { id: true },
+      });
+      alreadyEnrolled = clone !== null;
+    }
+    return lessonRowToWire(
+      toRowMinimal(row),
+      computeFlags(row, effectiveUserId, alreadyEnrolled),
+      cardRowToMinimal(row.cards),
+    );
   }
 
   async create(ownerId: string, dto: CreateLessonDto): Promise<LessonView> {
@@ -211,7 +315,11 @@ export class LessonsService {
       },
       include: { cards: true },
     });
-    return toLessonView(row);
+    return lessonRowToWire(
+      toRowMinimal(row),
+      this.flagsEnabled ? ownerFlags() : emptyFlags(),
+      cardRowToMinimal(row.cards),
+    );
   }
 
   async update(id: string, ownerId: string, dto: UpdateLessonDto): Promise<LessonView> {
@@ -226,7 +334,11 @@ export class LessonsService {
       },
       include: { cards: { orderBy: { ordinal: 'asc' } } },
     });
-    return toLessonView(row);
+    return lessonRowToWire(
+      toRowMinimal(row),
+      this.flagsEnabled ? ownerFlags() : emptyFlags(),
+      cardRowToMinimal(row.cards),
+    );
   }
 
   async remove(id: string, ownerId: string): Promise<void> {
@@ -458,7 +570,7 @@ export class LessonsService {
       .filter((s): s is string => s !== null);
   }
 
-  async enrollInCatalog(userId: string, sourceLessonId: string): Promise<LessonView> {
+  async enrollInCatalog(userId: string, sourceLessonId: string): Promise<EnrollResult> {
     const source = await this.prisma.lesson.findUnique({
       where: { id: sourceLessonId },
       include: { cards: { orderBy: { ordinal: 'asc' } } },
@@ -474,7 +586,21 @@ export class LessonsService {
       include: { cards: { orderBy: { ordinal: 'asc' } } },
     });
     if (existing) {
-      return toLessonView(existing);
+      return {
+        lesson: lessonRowToWire(
+          toRowMinimal(existing),
+          {
+            isCatalog: true,
+            isOwned: true,
+            canEdit: true,
+            canEnroll: false,
+            alreadyEnrolled: true,
+          },
+          cardRowToMinimal(existing.cards),
+        ),
+        created: false,
+        clonedFromId: sourceLessonId,
+      };
     }
     const clone = await this.prisma.lesson.create({
       data: {
@@ -518,9 +644,32 @@ export class LessonsService {
         update: {},
       });
     }
-    return toLessonView({
-      ...clone,
-      cards: clonedCards,
-    });
+    return {
+      lesson: lessonRowToWire(
+        toRowMinimal(clone as unknown as PrismaLessonWithCards),
+        {
+          isCatalog: true,
+          isOwned: true,
+          canEdit: true,
+          canEnroll: false,
+          alreadyEnrolled: false,
+        },
+        cardRowToMinimal(
+          clonedCards.map((c) => ({
+            id: c.id,
+            term: c.term,
+            definition: c.definition,
+            example: c.example,
+            translation: c.translation,
+            explanationEs: c.explanationEs,
+            audioKey: c.audioKey,
+            level: c.level,
+            ordinal: c.ordinal,
+          })),
+        ),
+      ),
+      created: true,
+      clonedFromId: sourceLessonId,
+    };
   }
 }

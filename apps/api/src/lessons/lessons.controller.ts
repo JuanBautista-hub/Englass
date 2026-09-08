@@ -3,18 +3,23 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   HttpCode,
   Param,
   Patch,
   Post,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { LessonsService } from './lessons.service';
+import type { EnrollResult } from '@engclass/shared';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { CreateCardDto } from './dto/create-card.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { CatalogDeprecationService } from './catalog-deprecation.service';
 
 interface AuthenticatedRequest {
   user: { id: string; email: string };
@@ -23,7 +28,10 @@ interface AuthenticatedRequest {
 @Controller('lessons')
 @UseGuards(JwtAuthGuard)
 export class LessonsController {
-  constructor(private readonly lessons: LessonsService) {}
+  constructor(
+    private readonly lessons: LessonsService,
+    private readonly deprecation: CatalogDeprecationService,
+  ) {}
 
   @Get('catalog')
   catalog() {
@@ -36,14 +44,33 @@ export class LessonsController {
   }
 
   @Get('catalog/:id')
-  catalogLesson(@Param('id') id: string) {
-    return this.lessons.findOneAsCatalog(id);
+  @Header('Deprecation', 'true')
+  catalogLesson(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.deprecation.recordHit();
+    res.setHeader('Sunset', this.deprecation.sunsetDateHttp());
+    res.setHeader(
+      'Link',
+      `<${this.deprecation.successorUrl(id)}>; rel="successor-version"`,
+    );
+    return this.lessons.findOneAsCatalog(id, req.user.id);
   }
 
   @Post('catalog/:id/enroll')
-  @HttpCode(201)
-  enroll(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    return this.lessons.enrollInCatalog(req.user.id, id);
+  @HttpCode(200)
+  async enroll(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<EnrollResult> {
+    const result = await this.lessons.enrollInCatalog(req.user.id, id);
+    if (result.created) {
+      res.status(201);
+    }
+    return result;
   }
 
   @Get()
