@@ -39,3 +39,19 @@ export interface Lesson {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface CatalogLessonSummary {
+  id: string;
+  title: string;
+  description: string | null;
+  level: string;
+  cardCount: number;
+}
+
+export interface CatalogCategoryGroup {
+  id: string;
+  slug: string;
+  name: string;
+  iconKey: string | null;
+  lessons: CatalogLessonSummary[];
+}

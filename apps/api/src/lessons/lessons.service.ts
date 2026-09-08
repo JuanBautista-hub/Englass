@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { CreateCardDto } from './dto/create-card.dto';
+import { SYSTEM_USER_ID } from '../common/constants';
+import { initialSrsState } from '../srs/sm2';
 
 export interface CardView {
   id: string;
@@ -25,6 +27,22 @@ export interface LessonView {
   cards: CardView[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CatalogLessonSummary {
+  id: string;
+  title: string;
+  description: string | null;
+  level: string;
+  cardCount: number;
+}
+
+export interface CatalogCategoryGroup {
+  id: string;
+  slug: string;
+  name: string;
+  iconKey: string | null;
+  lessons: CatalogLessonSummary[];
 }
 
 type LessonRow = {
@@ -104,6 +122,17 @@ export class LessonsService {
     return toLessonView(row);
   }
 
+  async findOneAsCatalog(id: string): Promise<LessonView> {
+    const row = await this.prisma.lesson.findUnique({
+      where: { id },
+      include: { cards: { orderBy: { ordinal: 'asc' } } },
+    });
+    if (!row) {
+      throw new NotFoundException('lesson_not_found');
+    }
+    return toLessonView(row);
+  }
+
   async create(ownerId: string, dto: CreateLessonDto): Promise<LessonView> {
     const category = await this.prisma.category.findUnique({ where: { id: dto.categoryId } });
     if (!category) {
@@ -170,5 +199,93 @@ export class LessonsService {
       orderBy: { ordinal: 'asc' },
     });
     return rows.map(toCardView);
+  }
+
+  async listCatalog(): Promise<CatalogCategoryGroup[]> {
+    const categories = await this.prisma.category.findMany({ orderBy: { name: 'asc' } });
+    const lessons = await this.prisma.lesson.findMany({
+      where: { ownerId: SYSTEM_USER_ID },
+      include: { _count: { select: { cards: true } } },
+      orderBy: { createdAt: 'asc' },
+    });
+    const byCategory = new Map<string, CatalogLessonSummary[]>();
+    for (const l of lessons) {
+      const list = byCategory.get(l.categoryId) ?? [];
+      list.push({
+        id: l.id,
+        title: l.title,
+        description: l.description,
+        level: l.level,
+        cardCount: l._count.cards,
+      });
+      byCategory.set(l.categoryId, list);
+    }
+    return categories
+      .filter((c) => (byCategory.get(c.id)?.length ?? 0) > 0)
+      .map((c) => ({
+        id: c.id,
+        slug: c.slug,
+        name: c.name,
+        iconKey: c.iconKey,
+        lessons: byCategory.get(c.id) ?? [],
+      }));
+  }
+
+  async enrollInCatalog(userId: string, sourceLessonId: string): Promise<LessonView> {
+    const source = await this.prisma.lesson.findUnique({
+      where: { id: sourceLessonId },
+      include: { cards: { orderBy: { ordinal: 'asc' } } },
+    });
+    if (!source) {
+      throw new NotFoundException('lesson_not_found');
+    }
+    if (source.ownerId !== SYSTEM_USER_ID) {
+      throw new ForbiddenException('not_a_catalog_lesson');
+    }
+    const clone = await this.prisma.lesson.create({
+      data: {
+        ownerId: userId,
+        title: source.title,
+        description: source.description,
+        level: source.level,
+        categoryId: source.categoryId,
+      },
+    });
+    let ordinal = 0;
+    const now = new Date();
+    for (const src of source.cards) {
+      await this.prisma.vocabularyCard.create({
+        data: {
+          lessonId: clone.id,
+          ordinal,
+          term: src.term,
+          definition: src.definition,
+          example: src.example,
+          translation: src.translation,
+          audioKey: src.audioKey,
+          level: src.level,
+        },
+      });
+      ordinal += 1;
+    }
+    const clonedCards = await this.prisma.vocabularyCard.findMany({
+      where: { lessonId: clone.id },
+      orderBy: { ordinal: 'asc' },
+    });
+    for (const card of clonedCards) {
+      await this.prisma.cardProgress.upsert({
+        where: { userId_cardId: { userId, cardId: card.id } },
+        create: {
+          userId,
+          cardId: card.id,
+          ...initialSrsState(now),
+        },
+        update: {},
+      });
+    }
+    return toLessonView({
+      ...clone,
+      cards: clonedCards,
+    });
   }
 }

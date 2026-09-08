@@ -1,6 +1,6 @@
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { LessonsService } from '../../core/services/lessons.service';
 import { TtsService } from '../../core/services/tts.service';
 import { Lesson, VocabularyCard } from '../../core/models';
@@ -21,10 +21,24 @@ interface CardPlayback {
     <a routerLink="/lessons">← Back</a>
     @if (lesson(); as l) {
       <section class="card" style="margin-top:0.75rem;">
-        <h2>{{ l.title }}</h2>
-        <p style="color:#64748b;">[{{ l.level }}]</p>
+        <div class="row" style="justify-content:space-between;align-items:flex-start;">
+          <div>
+            <h2 style="margin:0;">{{ l.title }}</h2>
+            <p style="margin:0;color:#64748b;">[{{ l.level }}]</p>
+          </div>
+          @if (isCatalog()) {
+            <button class="primary" (click)="enroll()" [disabled]="enrolling()">
+              {{ enrolling() ? 'Adding…' : '+ Add to my lessons' }}
+            </button>
+          }
+        </div>
         @if (l.description) {
           <p style="color:#475569;">{{ l.description }}</p>
+        }
+        @if (isCatalog()) {
+          <p style="color:#475569;font-size:0.85rem;margin:0;">
+            Preview from the catalogue. Add it to start tracking your progress.
+          </p>
         }
       </section>
 
@@ -67,33 +81,35 @@ interface CardPlayback {
         }
       </section>
 
-      <section class="card">
-        <h3>Add card</h3>
-        <form (submit)="onAddCard($event, l.id)">
-          <div style="margin-bottom:0.5rem;">
-            <label for="term">Term</label>
-            <input id="term" name="term" required [(ngModel)]="cardDraft.term" />
-          </div>
-          <div style="margin-bottom:0.5rem;">
-            <label for="definition">Definition</label>
-            <textarea id="definition" name="definition" rows="2" required [(ngModel)]="cardDraft.definition"></textarea>
-          </div>
-          <div style="margin-bottom:0.5rem;">
-            <label for="example">Example (optional)</label>
-            <input id="example" name="example" [(ngModel)]="cardDraft.example" />
-          </div>
-          <div style="margin-bottom:0.5rem;">
-            <label for="translation">Translation (optional)</label>
-            <input id="translation" name="translation" [(ngModel)]="cardDraft.translation" />
-          </div>
-          @if (error()) {
-            <p class="error">{{ error() }}</p>
-          }
-          <button type="submit" class="primary" [disabled]="adding()">
-            {{ adding() ? 'Saving…' : 'Add card' }}
-          </button>
-        </form>
-      </section>
+      @if (!isCatalog()) {
+        <section class="card">
+          <h3>Add card</h3>
+          <form (submit)="onAddCard($event, l.id)">
+            <div style="margin-bottom:0.5rem;">
+              <label for="term">Term</label>
+              <input id="term" name="term" required [(ngModel)]="cardDraft.term" />
+            </div>
+            <div style="margin-bottom:0.5rem;">
+              <label for="definition">Definition</label>
+              <textarea id="definition" name="definition" rows="2" required [(ngModel)]="cardDraft.definition"></textarea>
+            </div>
+            <div style="margin-bottom:0.5rem;">
+              <label for="example">Example (optional)</label>
+              <input id="example" name="example" [(ngModel)]="cardDraft.example" />
+            </div>
+            <div style="margin-bottom:0.5rem;">
+              <label for="translation">Translation (optional)</label>
+              <input id="translation" name="translation" [(ngModel)]="cardDraft.translation" />
+            </div>
+            @if (error()) {
+              <p class="error">{{ error() }}</p>
+            }
+            <button type="submit" class="primary" [disabled]="adding()">
+              {{ adding() ? 'Saving…' : 'Add card' }}
+            </button>
+          </form>
+        </section>
+      }
     } @else if (loading()) {
       <p>Loading…</p>
     } @else {
@@ -103,12 +119,15 @@ interface CardPlayback {
 })
 export class LessonDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly lessons = inject(LessonsService);
   private readonly tts = inject(TtsService);
 
   protected readonly lesson = signal<Lesson | null>(null);
   protected readonly loading = signal(true);
+  protected readonly isCatalog = signal(false);
   protected readonly adding = signal(false);
+  protected readonly enrolling = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly playback = signal<Map<string, CardPlayback>>(new Map());
   protected cardDraft = { term: '', definition: '', example: '', translation: '' };
@@ -119,6 +138,7 @@ export class LessonDetailPage implements OnInit, OnDestroy {
       this.loading.set(false);
       return;
     }
+    this.isCatalog.set(this.route.snapshot.queryParamMap.get('source') === 'catalog');
     await this.load(id);
   }
 
@@ -136,6 +156,23 @@ export class LessonDetailPage implements OnInit, OnDestroy {
 
   isLoading(cardId: string): boolean {
     return this.playback().get(cardId)?.loading ?? false;
+  }
+
+  async enroll(): Promise<void> {
+    const l = this.lesson();
+    if (!l || this.enrolling()) {
+      return;
+    }
+    this.enrolling.set(true);
+    this.error.set(null);
+    try {
+      const cloned = await this.lessons.enrollInCatalog(l.id);
+      await this.router.navigate(['/lessons', cloned.id]);
+    } catch (err: unknown) {
+      this.error.set(err instanceof Error ? err.message : 'enroll_failed');
+    } finally {
+      this.enrolling.set(false);
+    }
   }
 
   async speak(card: VocabularyCard): Promise<void> {
@@ -188,7 +225,10 @@ export class LessonDetailPage implements OnInit, OnDestroy {
   private async load(id: string): Promise<void> {
     this.loading.set(true);
     try {
-      this.lesson.set(await this.lessons.get(id));
+      const lesson = this.isCatalog()
+        ? await this.lessons.getCatalogLesson(id)
+        : await this.lessons.get(id);
+      this.lesson.set(lesson);
     } catch (err: unknown) {
       this.error.set(err instanceof Error ? err.message : 'load_failed');
     } finally {

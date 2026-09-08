@@ -25,6 +25,22 @@ interface AuthenticatedRequest {
 export class LessonsController {
   constructor(private readonly lessons: LessonsService) {}
 
+  @Get('catalog')
+  catalog() {
+    return this.lessons.listCatalog();
+  }
+
+  @Get('catalog/:id')
+  catalogLesson(@Param('id') id: string) {
+    return this.lessons.findOneAsCatalog(id);
+  }
+
+  @Post('catalog/:id/enroll')
+  @HttpCode(201)
+  enroll(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.lessons.enrollInCatalog(req.user.id, id);
+  }
+
   @Get()
   list(@Req() req: AuthenticatedRequest) {
     return this.lessons.list(req.user.id);

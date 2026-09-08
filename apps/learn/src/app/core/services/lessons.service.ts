@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom, Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { Lesson, VocabularyCard } from '../models';
+import { CatalogCategoryGroup, Lesson, VocabularyCard } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class LessonsService {
@@ -14,6 +14,27 @@ export class LessonsService {
 
   get(id: string): Promise<Lesson> {
     return firstValueFrom(this.http.get<Lesson>(`${environment.apiBaseUrl}/lessons/${id}`));
+  }
+
+  getCatalogLesson(id: string): Promise<Lesson> {
+    return firstValueFrom(
+      this.http.get<Lesson>(`${environment.apiBaseUrl}/lessons/catalog/${id}`),
+    );
+  }
+
+  listCatalog(): Promise<CatalogCategoryGroup[]> {
+    return firstValueFrom(
+      this.http.get<CatalogCategoryGroup[]>(`${environment.apiBaseUrl}/lessons/catalog`),
+    );
+  }
+
+  enrollInCatalog(sourceLessonId: string): Promise<Lesson> {
+    return firstValueFrom(
+      this.http.post<Lesson>(
+        `${environment.apiBaseUrl}/lessons/catalog/${sourceLessonId}/enroll`,
+        {},
+      ),
+    );
   }
 
   create(input: {
