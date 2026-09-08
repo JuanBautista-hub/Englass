@@ -4,6 +4,9 @@
   "private": true,
   "description": "Engclass learn PWA (Angular 17+). Voice lessons with TTS playback.",
   "scripts": {
+    "sync-env": "ts-node --transpile-only scripts/sync-env.ts",
+    "prestart": "pnpm sync-env",
+    "prebuild": "pnpm sync-env",
     "start": "ng serve --port 4201",
     "build": "ng build",
     "lint": "tsc -p tsconfig.app.json --noEmit",
@@ -29,6 +32,8 @@
     "@angular/cli": "^17.3.10",
     "@angular/compiler-cli": "^17.3.11",
     "@types/node": "^20.16.10",
+    "dotenv": "^16.4.5",
+    "ts-node": "^10.9.2",
     "typescript": "~5.4.5"
   }
 }

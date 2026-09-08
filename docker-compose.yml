@@ -1,21 +1,26 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: engclass-postgres
+  mysql:
+    image: mysql:8.0
+    container_name: engclass-mysql
     restart: unless-stopped
     environment:
-      POSTGRES_USER: engclass
-      POSTGRES_PASSWORD: engclass
-      POSTGRES_DB: engclass
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: engclass
+      MYSQL_USER: engclass
+      MYSQL_PASSWORD: engclass
+    command:
+      - --default-authentication-plugin=mysql_native_password
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - engclass_pgdata:/var/lib/postgresql/data
+      - engclass_mysqldata:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U engclass -d engclass"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "engclass", "-pengclass"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
 volumes:
-  engclass_pgdata:
+  engclass_mysqldata:
