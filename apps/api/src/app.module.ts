@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ConfigDefaultsModule } from './common/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -13,11 +14,13 @@ import { LearningPathModule } from './learning-path/learning-path.module';
 import { AchievementsModule } from './achievements/achievements.module';
 import { LabelsModule } from './labels/labels.module';
 import { TtsSegmentsModule } from './tts-segments/tts-segments.module';
+import { AiModule } from './ai/ai.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ConfigDefaultsModule,
     PrismaModule,
     UsersModule,
     AuthModule,
@@ -31,6 +34,7 @@ import { HealthController } from './health/health.controller';
     AchievementsModule,
     LabelsModule,
     TtsSegmentsModule,
+    AiModule,
   ],
   controllers: [HealthController],
 })
