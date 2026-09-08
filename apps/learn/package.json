@@ -1,0 +1,34 @@
+{
+  "name": "@engclass/learn",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Engclass learn PWA (Angular 17+). Voice lessons with TTS playback.",
+  "scripts": {
+    "start": "ng serve --port 4201",
+    "build": "ng build",
+    "lint": "tsc -p tsconfig.app.json --noEmit",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit",
+    "test": "echo \"no tests yet\" && exit 0"
+  },
+  "dependencies": {
+    "@angular/animations": "^17.3.11",
+    "@angular/common": "^17.3.11",
+    "@angular/compiler": "^17.3.11",
+    "@angular/core": "^17.3.11",
+    "@angular/forms": "^17.3.11",
+    "@angular/platform-browser": "^17.3.11",
+    "@angular/platform-browser-dynamic": "^17.3.11",
+    "@angular/router": "^17.3.11",
+    "@angular/service-worker": "^17.3.11",
+    "rxjs": "^7.8.1",
+    "tslib": "^2.6.3",
+    "zone.js": "~0.14.10"
+  },
+  "devDependencies": {
+    "@angular-devkit/build-angular": "^17.3.10",
+    "@angular/cli": "^17.3.10",
+    "@angular/compiler-cli": "^17.3.11",
+    "@types/node": "^20.16.10",
+    "typescript": "~5.4.5"
+  }
+}
