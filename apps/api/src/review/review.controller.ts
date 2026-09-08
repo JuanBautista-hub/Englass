@@ -1,5 +1,17 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { ReviewService } from './review.service';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import type { Response } from 'express';
+import { ReviewService, type StudySessionSummaryView } from './review.service';
 import { ReviewCardDto } from './dto/review-card.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -37,5 +49,15 @@ export class ReviewController {
     @Body() dto: ReviewCardDto,
   ) {
     return this.review.applyReview(req.user.id, cardId, dto.rating);
+  }
+
+  @Post('sessions/end')
+  @HttpCode(200)
+  async endSession(
+    @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StudySessionSummaryView> {
+    res.setHeader('Cache-Control', 'private, no-store');
+    return this.review.endSession(req.user.id);
   }
 }

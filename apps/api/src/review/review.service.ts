@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { SrsService, type ApplyReviewResult } from '../srs/srs.service';
 import type { Rating } from '../srs/sm2';
 import { computeMastery, type Mastery } from '../srs/mastery';
+import type { ApplyReviewApiResult, StudySessionSummary } from '@engclass/shared';
+import { buildStudySessionSummary } from './session-summary';
 
 export interface DueCardView {
   progressId: string;
@@ -25,11 +27,7 @@ export interface DueCardView {
   lastRatings: Array<{ rating: string; reviewedAt: string }>;
 }
 
-export interface StudySessionSummary {
-  totalReviewed: number;
-  byRating: { again: number; hard: number; good: number; easy: number };
-  nextDueAt: string | null;
-}
+export interface StudySessionSummaryView extends StudySessionSummary {}
 
 export interface ReviewStatsView {
   dueToday: number;
@@ -45,14 +43,31 @@ interface LastRatingRow {
   reviewedAt: Date;
 }
 
-const LAST_RATINGS_LIMIT = 5;
+interface SessionWindow {
+  startedAt: Date;
+  cardsRated: Map<string, { rating: Rating; intervalDays: number; reviewedAt: Date; newlyAwarded: string[] }>;
+  streakBefore: number;
+}
+
+export const LAST_RATINGS_LIMIT = 5;
 
 @Injectable()
 export class ReviewService {
+  private readonly windows = new Map<string, SessionWindow>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly srs: SrsService,
   ) {}
+
+  private ensureWindow(userId: string, streakBefore: number): SessionWindow {
+    let w = this.windows.get(userId);
+    if (!w) {
+      w = { startedAt: new Date(), cardsRated: new Map(), streakBefore };
+      this.windows.set(userId, w);
+    }
+    return w;
+  }
 
   async listDueForLesson(userId: string, lessonId: string): Promise<DueCardView[]> {
     const lesson = await this.prisma.lesson.findFirst({
@@ -90,7 +105,11 @@ export class ReviewService {
     );
   }
 
-  async applyReview(userId: string, cardId: string, rating: Rating): Promise<ApplyReviewResult> {
+  async applyReview(
+    userId: string,
+    cardId: string,
+    rating: Rating,
+  ): Promise<ApplyReviewApiResult> {
     const progress = await this.prisma.cardProgress.findUnique({
       where: { userId_cardId: { userId, cardId } },
     });
@@ -99,12 +118,101 @@ export class ReviewService {
     }
     const card = await this.prisma.vocabularyCard.findUnique({
       where: { id: cardId },
-      select: { lesson: { select: { ownerId: true } } },
+      select: {
+        lessonId: true,
+        term: true,
+        definition: true,
+        example: true,
+        translation: true,
+        explanationEs: true,
+        ordinal: true,
+        audioKey: true,
+        level: true,
+        lesson: { select: { ownerId: true, title: true } },
+      },
     });
     if (!card || card.lesson.ownerId !== userId) {
       throw new ForbiddenException('card_not_owned');
     }
-    return this.srs.applyReview(userId, cardId, rating);
+    const result: ApplyReviewResult = await this.srs.applyReview(userId, cardId, rating);
+
+    const updated = await this.prisma.cardProgress.findUnique({
+      where: { userId_cardId: { userId, cardId } },
+      include: { card: true },
+    });
+    if (!updated) {
+      throw new NotFoundException('card_not_enrolled');
+    }
+    const lastRatingsByCard = await this.fetchLastRatings([cardId], userId);
+    const updatedCard = this.toDueCardView(
+      {
+        id: updated.id,
+        cardId: updated.cardId,
+        easeFactor: updated.easeFactor,
+        intervalDays: updated.intervalDays,
+        repetitions: updated.repetitions,
+        lapses: updated.lapses,
+        dueAt: updated.dueAt,
+        lastReviewedAt: updated.lastReviewedAt,
+        card: {
+          term: updated.card.term,
+          definition: updated.card.definition,
+          example: updated.card.example,
+          translation: updated.card.translation,
+          explanationEs: updated.card.explanationEs,
+          ordinal: updated.card.ordinal,
+        },
+      },
+      card.lessonId,
+      card.lesson.title,
+      lastRatingsByCard,
+    );
+
+    const remaining = await this.listAllDueForUser(userId, 1);
+    const sessionDone = remaining.length === 0;
+
+    const window = this.ensureWindow(userId, result.userBefore.currentStreak);
+    window.cardsRated.set(cardId, {
+      rating,
+      intervalDays: updated.intervalDays,
+      reviewedAt: new Date(),
+      newlyAwarded: result.newlyAwarded,
+    });
+
+    return {
+      progress: result.progress,
+      updatedCard,
+      sessionDone,
+      newlyAwarded: result.newlyAwarded,
+      userBefore: result.userBefore,
+      userAfter: result.userAfter,
+    };
+  }
+
+  async endSession(userId: string): Promise<StudySessionSummaryView> {
+    const window = this.windows.get(userId);
+    let reviews: Array<{ rating: Rating; intervalDays: number; reviewedAt: Date; newlyAwarded: string[] }>;
+    let streakBefore = 0;
+    let streakAfter = 0;
+    if (window) {
+      reviews = Array.from(window.cardsRated.values());
+      streakBefore = window.streakBefore;
+      streakAfter = reviews.length > 0 ? await this.fetchCurrentStreak(userId) : streakBefore;
+    } else {
+      reviews = [];
+      const cur = await this.fetchCurrentStreak(userId);
+      streakBefore = cur;
+      streakAfter = cur;
+    }
+    const nextDueAt = await this.fetchNextDueAt(userId);
+    const summary: StudySessionSummaryView = buildStudySessionSummary({
+      reviews,
+      nextDueAt,
+      streakBefore,
+      streakAfter,
+    });
+    this.windows.delete(userId);
+    return summary;
   }
 
   async getStats(userId: string): Promise<ReviewStatsView> {
@@ -219,4 +327,23 @@ export class ReviewService {
     }
     return grouped;
   }
+
+  private async fetchCurrentStreak(userId: string): Promise<number> {
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { currentStreak: true },
+    });
+    return u?.currentStreak ?? 0;
+  }
+
+  private async fetchNextDueAt(userId: string): Promise<Date | null> {
+    const next = await this.prisma.cardProgress.findFirst({
+      where: { userId, dueAt: { gt: new Date() } },
+      orderBy: { dueAt: 'asc' },
+      select: { dueAt: true },
+    });
+    return next?.dueAt ?? null;
+  }
 }
+
+export const __testConstants = { LAST_RATINGS_LIMIT, LAST_RATINGS_KEY: 'engclass.test.lastRatings' };
