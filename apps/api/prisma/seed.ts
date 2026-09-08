@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
+import * as crypto from 'node:crypto';
 
 const prisma = new PrismaClient();
 
@@ -159,7 +161,29 @@ const seed: SeedCategory[] = [
   },
 ];
 
+const SYSTEM_USER_ID = 'seed-system-user';
+const SYSTEM_USER_EMAIL = 'system@engclass.local';
+const SYSTEM_USER_NAME = 'Engclass Seed';
+
+async function ensureSystemUser(): Promise<string> {
+  const existing = await prisma.user.findUnique({ where: { id: SYSTEM_USER_ID } });
+  if (existing) {
+    return existing.id;
+  }
+  const passwordHash = await bcrypt.hash(crypto.randomUUID(), 12);
+  const created = await prisma.user.create({
+    data: {
+      id: SYSTEM_USER_ID,
+      email: SYSTEM_USER_EMAIL,
+      passwordHash,
+      displayName: SYSTEM_USER_NAME,
+    },
+  });
+  return created.id;
+}
+
 async function main(): Promise<void> {
+  const ownerId = await ensureSystemUser();
   for (const cat of seed) {
     const category = await prisma.category.upsert({
       where: { slug: cat.slug },
@@ -193,7 +217,8 @@ async function main(): Promise<void> {
               title: lesson.title,
               description: lesson.description,
               level: lesson.level,
-              categoryId: category.id,
+              owner: { connect: { id: ownerId } },
+              category: { connect: { id: category.id } },
             },
           });
       let ordinal = 0;
