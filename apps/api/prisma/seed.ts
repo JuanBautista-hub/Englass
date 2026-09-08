@@ -215,11 +215,62 @@ const seed: SeedCategory[] = [
     ],
   },
   {
+    slug: 'grammar',
+    name: 'Gramática',
+    description: 'Reglas prácticas para construir frases correctas.',
+    iconKey: 'grammar',
+    order: 6,
+    lessons: [
+      {
+        title: 'Preposiciones on / in / at',
+        description: 'Cuándo usar on, in y at para tiempo y lugar.',
+        level: 'A2',
+        cards: [
+          { term: 'on', definition: 'Días de la semana y fechas específicas.', example: 'The meeting is on Monday. / I was born on March 15th.', translation: 'en (día/fecha)' },
+          { term: 'on', definition: 'Superficies y líneas (cosas encima de algo).', example: 'The book is on the table. / The picture is on the wall.', translation: 'sobre' },
+          { term: 'in', definition: 'Meses, años, estaciones y siglos.', example: 'I started in 2020. / We travel in summer. / Born in the 90s.', translation: 'en (mes/año/estación)' },
+          { term: 'in', definition: 'Lugares cerrados (cuartos, edificios, ciudades, países).', example: 'She is in the kitchen. / I live in Spain.', translation: 'en (lugar cerrado)' },
+          { term: 'in', definition: 'Partes del día: morning, afternoon, evening.', example: 'I study in the morning. / She naps in the afternoon.', translation: 'en (parte del día)' },
+          { term: 'at', definition: 'Horas y momentos puntuales.', example: 'The class starts at 9:00. / See you at noon.', translation: 'a (hora)' },
+          { term: 'at', definition: 'Lugares puntuales: la puerta, una parada, una dirección.', example: "I'm at the door. / Meet me at the bus stop.", translation: 'en (lugar puntual)' },
+          { term: 'at night', definition: 'EXCEPCIÓN: con "night" usamos AT, no IN.', example: 'I work at night. / Owls are awake at night.', translation: 'por la noche' },
+        ],
+      },
+      {
+        title: 'Plurales regulares',
+        description: 'Las reglas para formar el plural de la mayoría de los sustantivos.',
+        level: 'A2',
+        cards: [
+          { term: 'plural +s', definition: 'La mayoría de sustantivos añaden -s.', example: 'cat → cats, dog → dogs, book → books', translation: 'plural general' },
+          { term: 'plural +es', definition: 'Terminados en -s, -x, -z, -ch, -sh añaden -es.', example: 'bus → buses, box → boxes, watch → watches, dish → dishes', translation: 'plural +es' },
+          { term: 'plural -y → -ies', definition: 'Si termina en consonante + y, cambia a -ies.', example: 'city → cities, baby → babies, country → countries', translation: 'consonante + y → ies' },
+          { term: 'plural -y → -ys', definition: 'Si termina en vocal + y, solo añade -s (NO cambia).', example: 'day → days, boy → boys, key → keys, monkey → monkeys', translation: 'vocal + y → +s' },
+          { term: 'plural -f → -ves', definition: 'Algunos terminados en -f o -fe cambian a -ves.', example: 'wolf → wolves, knife → knives, leaf → leaves, wife → wives', translation: '-f/-fe → -ves' },
+          { term: 'plural -o → -oes', definition: 'Algunos terminados en -o añaden -es (palabras de origen latino o hispano).', example: 'potato → potatoes, tomato → tomatoes, hero → heroes', translation: '-o → +es' },
+        ],
+      },
+      {
+        title: 'Plurales irregulares',
+        description: 'Sustantivos que no siguen las reglas regulares.',
+        level: 'A2',
+        cards: [
+          { term: 'cambio de vocal', definition: 'Algunos plurales cambian solo la vocal interna.', example: 'man → men, woman → women, foot → feet, tooth → teeth, mouse → mice, goose → geese', translation: 'cambio vocálico' },
+          { term: 'plural -um → -a', definition: 'Palabras de origen latino terminadas en -um cambian a -a.', example: 'medium → media, bacterium → bacteria, curriculum → curricula', translation: '-um → -a' },
+          { term: 'plural -is → -es', definition: 'Palabras de origen griego terminadas en -is cambian a -es.', example: 'crisis → crises, analysis → analyses, basis → bases', translation: '-is → -es' },
+          { term: 'plural -on → -a', definition: 'Algunas palabras terminadas en -on cambian a -a.', example: 'phenomenon → phenomena, criterion → criteria', translation: '-on → -a' },
+          { term: 'plural invariable', definition: 'Algunos sustantivos no cambian en plural.', example: 'sheep → sheep, fish → fish, deer → deer, aircraft → aircraft, species → species', translation: 'sin cambio' },
+          { term: 'plural obligatorio', definition: 'Algunos objetos solo se usan en plural en inglés.', example: 'scissors, trousers, glasses, pants, clothes', translation: 'siempre plural' },
+          { term: 'person → people', definition: '"person" → "people" (NO "persons", que existe pero es formal/raro).', example: 'Three people came to the meeting. / People are funny.', translation: 'persona → personas' },
+        ],
+      },
+    ],
+  },
+  {
     slug: 'tech-work',
     name: 'Trabajo y tecnología',
     description: 'Vocabulario para reuniones, código y operaciones.',
     iconKey: 'tech',
-    order: 6,
+    order: 7,
     lessons: [
       {
         title: 'La oficina moderna',
@@ -288,10 +339,31 @@ async function pruneObsoleteCategories(currentSlugs: Set<string>): Promise<void>
   }
 }
 
+async function dedupeLessons(): Promise<void> {
+  const all = await prisma.lesson.findMany({ orderBy: { createdAt: 'asc' } });
+  const seen = new Map<string, string>();
+  const toDelete: string[] = [];
+  for (const l of all) {
+    const key = `${l.categoryId}::${l.title}`;
+    if (seen.has(key)) {
+      toDelete.push(l.id);
+    } else {
+      seen.set(key, l.id);
+    }
+  }
+  for (const id of toDelete) {
+    await prisma.lesson.delete({ where: { id } });
+  }
+  if (toDelete.length > 0) {
+    console.log(`dedupe: removed ${toDelete.length} duplicate lesson(s)`);
+  }
+}
+
 async function main(): Promise<void> {
   const ownerId = await ensureSystemUser();
   const currentSlugs = new Set(seed.map((c) => c.slug));
   await pruneObsoleteCategories(currentSlugs);
+  await dedupeLessons();
   for (const cat of seed) {
     const category = await prisma.category.upsert({
       where: { slug: cat.slug },
