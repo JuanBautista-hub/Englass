@@ -5,6 +5,11 @@ import { LessonsService } from '../../core/services/lessons.service';
 import { TtsService } from '../../core/services/tts.service';
 import { Lesson, VocabularyCard } from '../../core/models';
 
+interface CardSpeechState {
+  speaking: 'en' | 'es' | null;
+  error: string | null;
+}
+
 @Component({
   selector: 'app-lesson-detail',
   standalone: true,
@@ -49,13 +54,22 @@ import { Lesson, VocabularyCard } from '../../core/models';
             <div class="row" style="justify-content:space-between;">
               <div>
                 <strong>{{ c.term }}</strong>
-                @if (speakingCardId() === c.id) {
-                  <span style="color:#15803d;margin-left:0.5rem;font-size:0.85rem;">● speaking</span>
+                @if (stateFor(c.id); as st) {
+                  @if (st.speaking === 'en') {
+                    <span style="color:#15803d;margin-left:0.5rem;font-size:0.85rem;">● EN</span>
+                  } @else if (st.speaking === 'es') {
+                    <span style="color:#15803d;margin-left:0.5rem;font-size:0.85rem;">● ES</span>
+                  }
                 }
               </div>
-              <button (click)="speak(c)" [disabled]="isLoading(c.id) || !ttsSupported()">
-                {{ isLoading(c.id) ? 'Speaking…' : 'Speak' }}
-              </button>
+              <div class="row">
+                <button (click)="speak(c, 'en')" [disabled]="isSpeaking(c.id) || !ttsSupported()">
+                  Speak (EN)
+                </button>
+                <button (click)="speak(c, 'es')" [disabled]="isSpeaking(c.id) || !ttsSupported() || !spanishText(c)">
+                  Hablar (ES)
+                </button>
+              </div>
             </div>
             <p style="margin:0.5rem 0 0;">{{ c.definition }}</p>
             @if (c.example) {
@@ -63,6 +77,12 @@ import { Lesson, VocabularyCard } from '../../core/models';
             }
             @if (c.translation) {
               <p style="margin:0.25rem 0 0;color:#64748b;">{{ c.translation }}</p>
+            }
+            @if (c.explanationEs) {
+              <details style="margin-top:0.5rem;">
+                <summary style="cursor:pointer;color:#1d4ed8;">Explicación en español</summary>
+                <p style="margin:0.5rem 0 0;color:#475569;">{{ c.explanationEs }}</p>
+              </details>
             }
             @if (errorFor(c.id); as msg) {
               <p class="error">{{ msg }}</p>
@@ -90,6 +110,10 @@ import { Lesson, VocabularyCard } from '../../core/models';
             <div style="margin-bottom:0.5rem;">
               <label for="translation">Translation (optional)</label>
               <input id="translation" name="translation" [(ngModel)]="cardDraft.translation" />
+            </div>
+            <div style="margin-bottom:0.5rem;">
+              <label for="explanationEs">Explicación en español (opcional)</label>
+              <textarea id="explanationEs" name="explanationEs" rows="3" [(ngModel)]="cardDraft.explanationEs"></textarea>
             </div>
             @if (error()) {
               <p class="error">{{ error() }}</p>
@@ -119,10 +143,9 @@ export class LessonDetailPage implements OnInit, OnDestroy {
   protected readonly adding = signal(false);
   protected readonly enrolling = signal(false);
   protected readonly error = signal<string | null>(null);
-  protected readonly speakingCardId = signal<string | null>(null);
-  protected readonly cardErrors = signal<Map<string, string>>(new Map());
+  protected readonly speechStates = signal<Map<string, CardSpeechState>>(new Map());
   protected readonly ttsSupported = signal(this.tts.isSupported());
-  protected cardDraft = { term: '', definition: '', example: '', translation: '' };
+  protected cardDraft = { term: '', definition: '', example: '', translation: '', explanationEs: '' };
 
   async ngOnInit(): Promise<void> {
     const id = this.route.snapshot.paramMap.get('id');
@@ -138,35 +161,47 @@ export class LessonDetailPage implements OnInit, OnDestroy {
     this.tts.cancel();
   }
 
-  isLoading(cardId: string): boolean {
-    return this.speakingCardId() === cardId;
+  stateFor(cardId: string): CardSpeechState | null {
+    return this.speechStates().get(cardId) ?? null;
+  }
+
+  isSpeaking(cardId: string): boolean {
+    return this.stateFor(cardId)?.speaking !== null && this.stateFor(cardId)?.speaking !== undefined;
   }
 
   errorFor(cardId: string): string | null {
-    return this.cardErrors().get(cardId) ?? null;
+    return this.stateFor(cardId)?.error ?? null;
   }
 
-  async speak(card: VocabularyCard): Promise<void> {
-    if (this.speakingCardId()) {
-      this.tts.cancel();
+  spanishText(card: VocabularyCard): string | null {
+    return card.explanationEs ?? card.translation;
+  }
+
+  async speak(card: VocabularyCard, lang: 'en' | 'es'): Promise<void> {
+    const text = lang === 'en' ? card.term : this.spanishText(card);
+    if (!text) {
+      return;
     }
-    this.speakingCardId.set(card.id);
-    this.patchError(card.id, null);
-    const handle = this.tts.speak(card.term, { lang: 'en-US', rate: 0.9 });
+    this.tts.cancel();
+    this.patchSpeech(card.id, { speaking: lang, error: null });
+    const handle = this.tts.speak(text, {
+      lang: lang === 'en' ? 'en-US' : 'es-ES',
+      rate: 0.9,
+    });
     if (!handle) {
-      this.speakingCardId.set(null);
-      this.patchError(card.id, 'speech_synthesis_unavailable');
+      this.patchSpeech(card.id, { speaking: null, error: 'speech_synthesis_unavailable' });
       return;
     }
     try {
       await handle.done;
     } catch (err: unknown) {
-      this.patchError(card.id, err instanceof Error ? err.message : 'speech_failed');
-    } finally {
-      if (this.speakingCardId() === card.id) {
-        this.speakingCardId.set(null);
-      }
+      this.patchSpeech(card.id, {
+        speaking: null,
+        error: err instanceof Error ? err.message : 'speech_failed',
+      });
+      return;
     }
+    this.patchSpeech(card.id, { speaking: null });
   }
 
   async enroll(): Promise<void> {
@@ -199,8 +234,9 @@ export class LessonDetailPage implements OnInit, OnDestroy {
         definition: this.cardDraft.definition,
         example: this.cardDraft.example || undefined,
         translation: this.cardDraft.translation || undefined,
+        explanationEs: this.cardDraft.explanationEs || undefined,
       });
-      this.cardDraft = { term: '', definition: '', example: '', translation: '' };
+      this.cardDraft = { term: '', definition: '', example: '', translation: '', explanationEs: '' };
       await this.load(lessonId);
     } catch (err: unknown) {
       this.error.set(err instanceof Error ? err.message : 'card_create_failed');
@@ -223,13 +259,10 @@ export class LessonDetailPage implements OnInit, OnDestroy {
     }
   }
 
-  private patchError(cardId: string, message: string | null): void {
-    const next = new Map(this.cardErrors());
-    if (message === null) {
-      next.delete(cardId);
-    } else {
-      next.set(cardId, message);
-    }
-    this.cardErrors.set(next);
+  private patchSpeech(cardId: string, patch: Partial<CardSpeechState>): void {
+    const next = new Map(this.speechStates());
+    const current = next.get(cardId) ?? { speaking: null, error: null };
+    next.set(cardId, { ...current, ...patch });
+    this.speechStates.set(next);
   }
 }

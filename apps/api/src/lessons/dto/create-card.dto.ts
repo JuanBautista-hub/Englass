@@ -24,6 +24,11 @@ export class CreateCardDto {
   translation?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  explanationEs?: string;
+
+  @IsOptional()
   @IsIn(LEVELS)
   level?: string;
 

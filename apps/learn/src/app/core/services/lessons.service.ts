@@ -53,6 +53,7 @@ export class LessonsService {
       definition: string;
       example?: string;
       translation?: string;
+      explanationEs?: string;
       level?: string;
     },
   ): Promise<VocabularyCard> {

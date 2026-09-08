@@ -9,6 +9,7 @@ interface SeedCard {
   definition: string;
   example: string;
   translation: string;
+  explanationEs: string;
 }
 
 interface SeedLesson {
@@ -476,6 +477,7 @@ async function main(): Promise<void> {
             definition: card.definition,
             example: card.example,
             translation: card.translation,
+            explanationEs: card.explanationEs,
             level: lesson.level,
           },
           update: {
@@ -483,6 +485,7 @@ async function main(): Promise<void> {
             definition: card.definition,
             example: card.example,
             translation: card.translation,
+            explanationEs: card.explanationEs,
             level: lesson.level,
           },
         });

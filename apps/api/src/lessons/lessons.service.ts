@@ -12,6 +12,7 @@ export interface CardView {
   definition: string;
   example: string | null;
   translation: string | null;
+  explanationEs: string | null;
   audioKey: string | null;
   level: string;
   ordinal: number;
@@ -65,6 +66,7 @@ type CardRow = {
   definition: string;
   example: string | null;
   translation: string | null;
+  explanationEs: string | null;
   audioKey: string | null;
   level: string;
   ordinal: number;
@@ -77,6 +79,7 @@ function toCardView(row: CardRow): CardView {
     definition: row.definition,
     example: row.example,
     translation: row.translation,
+    explanationEs: row.explanationEs,
     audioKey: row.audioKey,
     level: row.level,
     ordinal: row.ordinal,
@@ -188,6 +191,7 @@ export class LessonsService {
         definition: dto.definition,
         example: dto.example ?? null,
         translation: dto.translation ?? null,
+        explanationEs: dto.explanationEs ?? null,
         level: dto.level ?? 'A1',
         ordinal,
       },

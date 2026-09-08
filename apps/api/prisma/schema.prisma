@@ -65,20 +65,21 @@ model Lesson {
 }
 
 model VocabularyCard {
-  id          String         @id @default(cuid())
-  lessonId    String         @map("lesson_id")
-  lesson      Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  term        String
-  definition  String
-  example     String?
-  translation String?
-  audioKey    String?        @map("audio_key")
-  level       String         @default("A1")
-  ordinal     Int            @default(0)
-  createdAt   DateTime       @default(now()) @map("created_at")
-  updatedAt   DateTime       @updatedAt @map("updated_at")
-  progress    CardProgress[]
-  reviewLogs  ReviewLog[]
+  id           String         @id @default(cuid())
+  lessonId     String         @map("lesson_id")
+  lesson       Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  term         String
+  definition   String
+  example      String?
+  translation  String?
+  explanationEs String?       @map("explanation_es") @db.Text
+  audioKey     String?        @map("audio_key")
+  level        String         @default("A1")
+  ordinal      Int            @default(0)
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  progress     CardProgress[]
+  reviewLogs   ReviewLog[]
 
   @@unique([lessonId, ordinal])
   @@index([lessonId])

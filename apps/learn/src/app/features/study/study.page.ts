@@ -86,6 +86,16 @@ interface SessionSummary {
               @if (c.translation) {
                 <p style="margin:0;color:#64748b;">{{ c.translation }}</p>
               }
+              @if (c.explanationEs) {
+                <details style="margin-top:0.5rem;" open>
+                  <summary style="cursor:pointer;color:#1d4ed8;">Explicación en español</summary>
+                  <p style="margin:0.5rem 0 0;color:#475569;">{{ c.explanationEs }}</p>
+                </details>
+              }
+              <div class="row" style="margin-top:0.5rem;">
+                <button (click)="speakTerm(c)">🔊 EN</button>
+                <button (click)="speakEs(c)" [disabled]="!spanishText(c)">🔊 ES</button>
+              </div>
               <p style="margin:0.5rem 0 0;color:#94a3b8;font-size:0.8rem;">
                 ease {{ c.easeFactor.toFixed(2) }} · interval {{ c.intervalDays }}d · reps {{ c.repetitions }} · lapses {{ c.lapses }}
               </p>
@@ -165,11 +175,42 @@ export class StudyPage implements OnInit {
   }
 
   async speak(card: DueCard | null): Promise<void> {
+    return this.speakTerm(card);
+  }
+
+  async speakTerm(card: DueCard | null): Promise<void> {
     if (!card) {
       return;
     }
     this.speaking.set(true);
     const handle = this.tts.speak(card.term, { lang: 'en-US', rate: 0.9 });
+    if (!handle) {
+      this.speaking.set(false);
+      return;
+    }
+    try {
+      await handle.done;
+    } catch {
+      // ignore
+    } finally {
+      this.speaking.set(false);
+    }
+  }
+
+  spanishText(card: DueCard): string | null {
+    return card.explanationEs ?? card.translation;
+  }
+
+  async speakEs(card: DueCard | null): Promise<void> {
+    if (!card) {
+      return;
+    }
+    const text = this.spanishText(card);
+    if (!text) {
+      return;
+    }
+    this.speaking.set(true);
+    const handle = this.tts.speak(text, { lang: 'es-ES', rate: 0.95 });
     if (!handle) {
       this.speaking.set(false);
       return;

@@ -12,6 +12,7 @@ export interface DueCard {
   definition: string;
   example: string | null;
   translation: string | null;
+  explanationEs: string | null;
   ordinal: number;
   easeFactor: number;
   intervalDays: number;

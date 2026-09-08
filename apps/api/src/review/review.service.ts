@@ -13,6 +13,7 @@ export interface DueCardView {
   definition: string;
   example: string | null;
   translation: string | null;
+  explanationEs: string | null;
   ordinal: number;
   easeFactor: number;
   intervalDays: number;
@@ -70,6 +71,7 @@ export class ReviewService {
       definition: r.card.definition,
       example: r.card.example,
       translation: r.card.translation,
+      explanationEs: r.card.explanationEs,
       ordinal: r.card.ordinal,
       easeFactor: r.easeFactor,
       intervalDays: r.intervalDays,
@@ -96,6 +98,7 @@ export class ReviewService {
       definition: r.card.definition,
       example: r.card.example,
       translation: r.card.translation,
+      explanationEs: r.card.explanationEs,
       ordinal: r.card.ordinal,
       easeFactor: r.easeFactor,
       intervalDays: r.intervalDays,

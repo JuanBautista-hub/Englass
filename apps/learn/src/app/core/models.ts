@@ -23,6 +23,7 @@ export interface VocabularyCard {
   definition: string;
   example: string | null;
   translation: string | null;
+  explanationEs: string | null;
   audioKey: string | null;
   level: string;
   ordinal: number;
