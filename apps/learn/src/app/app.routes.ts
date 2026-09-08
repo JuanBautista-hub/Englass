@@ -19,5 +19,10 @@ export const APP_ROUTES: Routes = [
     loadComponent: () =>
       import('./features/lessons/lesson-detail.page').then((m) => m.LessonDetailPage),
   },
+  {
+    path: 'study/:id',
+    canActivate: [authGuard],
+    loadComponent: () => import('./features/study/study.page').then((m) => m.StudyPage),
+  },
   { path: '**', redirectTo: 'lessons' },
 ];

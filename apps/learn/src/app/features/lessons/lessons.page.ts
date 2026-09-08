@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { LessonsService } from '../../core/services/lessons.service';
+import { ReviewService } from '../../core/services/review.service';
 import { CatalogCategoryGroup, CatalogLessonSummary, Lesson } from '../../core/models';
 
 @Component({
@@ -9,6 +10,24 @@ import { CatalogCategoryGroup, CatalogLessonSummary, Lesson } from '../../core/m
   standalone: true,
   imports: [FormsModule, RouterLink],
   template: `
+    @if (stats(); as s) {
+      <section class="card" style="background:#f1f5f9;">
+        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+          <div>
+            <div style="font-size:1.5rem;font-weight:600;">{{ s.dueNow }} due now</div>
+            <div style="color:#475569;font-size:0.85rem;">
+              {{ s.dueToday }} due today · {{ s.learned }} learned · avg ease {{ s.averageEase }}
+            </div>
+          </div>
+          @if (s.dueNow > 0) {
+            <a class="primary" routerLink="/lessons" style="text-decoration:none;padding:0.5rem 0.9rem;background:#1f2937;color:#fff;border-radius:6px;" (click)="reviewFirstDue($event)">
+              Start review
+            </a>
+          }
+        </div>
+      </section>
+    }
+
     <section>
       <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
         <h2 style="margin:0;">Catalogue</h2>
@@ -129,7 +148,10 @@ import { CatalogCategoryGroup, CatalogLessonSummary, Lesson } from '../../core/m
                 <span style="color:#64748b;margin-left:0.5rem;">[{{ l.level }}]</span>
                 <span style="color:#64748b;margin-left:0.5rem;">{{ l.cards.length }} cards</span>
               </div>
-              <a [routerLink]="['/lessons', l.id]">Open</a>
+              <div class="row">
+                <a [routerLink]="['/study', l.id]">Study</a>
+                <a [routerLink]="['/lessons', l.id]">Open</a>
+              </div>
             </div>
             @if (l.description) {
               <p style="margin:0.5rem 0 0;color:#475569;">{{ l.description }}</p>
@@ -142,6 +164,7 @@ import { CatalogCategoryGroup, CatalogLessonSummary, Lesson } from '../../core/m
 })
 export class LessonsPage implements OnInit {
   private readonly svc = inject(LessonsService);
+  private readonly review = inject(ReviewService);
   private readonly router = inject(Router);
 
   protected readonly catalog = signal<CatalogCategoryGroup[]>([]);
@@ -155,11 +178,12 @@ export class LessonsPage implements OnInit {
   protected readonly creating = signal(false);
   protected readonly creatingBusy = signal(false);
   protected readonly createError = signal<string | null>(null);
+  protected readonly stats = signal<{ dueNow: number; dueToday: number; learned: number; averageEase: number } | null>(null);
   protected readonly levels = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
   protected draft = { title: '', description: '', categoryId: '', level: 'A1' };
 
   async ngOnInit(): Promise<void> {
-    await Promise.all([this.loadCatalog(), this.loadMyLessons()]);
+    await Promise.all([this.loadCatalog(), this.loadMyLessons(), this.loadStats()]);
   }
 
   toggleCreate(): void {
@@ -217,6 +241,18 @@ export class LessonsPage implements OnInit {
     }
   }
 
+  async reviewFirstDue(event: Event): Promise<void> {
+    event.preventDefault();
+    try {
+      const due = await this.review.allDue(1);
+      if (due.length > 0) {
+        await this.router.navigate(['/study', due[0].lessonId]);
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
   private async loadCatalog(): Promise<void> {
     this.catalogLoading.set(true);
     try {
@@ -247,6 +283,14 @@ export class LessonsPage implements OnInit {
       // existing behaviour: silent load failure for personal lessons
     } finally {
       this.lessonsLoading.set(false);
+    }
+  }
+
+  private async loadStats(): Promise<void> {
+    try {
+      this.stats.set(await this.review.stats());
+    } catch {
+      // ignore: stats are decorative
     }
   }
 

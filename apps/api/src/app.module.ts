@@ -7,6 +7,7 @@ import { LessonsModule } from './lessons/lessons.module';
 import { TtsModule } from './tts/tts.module';
 import { CategoriesModule } from './categories/categories.module';
 import { SrsModule } from './srs/srs.module';
+import { ReviewModule } from './review/review.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -19,6 +20,7 @@ import { HealthController } from './health/health.controller';
     LessonsModule,
     TtsModule,
     SrsModule,
+    ReviewModule,
   ],
   controllers: [HealthController],
 })
