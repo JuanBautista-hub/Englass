@@ -50,7 +50,14 @@ interface CardPlayback {
             }
             @if (audioFor(c.id); as pb) {
               @if (pb.url) {
-                <audio [src]="pb.url" controls style="display:block;margin-top:0.5rem;width:100%;"></audio>
+                <audio
+                  [attr.data-card-id]="c.id"
+                  [src]="pb.url"
+                  (ended)="onEnded(c.id)"
+                  controls
+                  autoplay
+                  style="display:block;margin-top:0.5rem;width:100%;"
+                ></audio>
               }
               @if (pb.error) {
                 <p class="error">{{ pb.error }}</p>
@@ -145,12 +152,17 @@ export class LessonDetailPage implements OnInit, OnDestroy {
         loading: false,
         error: null,
       });
+      this.tryAutoplay(card.id);
     } catch (err: unknown) {
       this.patchPlayback(card.id, {
         loading: false,
         error: err instanceof Error ? err.message : 'tts_failed',
       });
     }
+  }
+
+  onEnded(cardId: string): void {
+    this.patchPlayback(cardId, { loading: false });
   }
 
   async onAddCard(event: Event, lessonId: string): Promise<void> {
@@ -182,6 +194,17 @@ export class LessonDetailPage implements OnInit, OnDestroy {
     } finally {
       this.loading.set(false);
     }
+  }
+
+  private tryAutoplay(cardId: string): void {
+    setTimeout(() => {
+      const audio = document.querySelector<HTMLAudioElement>(
+        `audio[data-card-id="${cardId}"]`,
+      );
+      audio?.play().catch(() => {
+        // Autoplay blocked by browser; user can press play in the controls.
+      });
+    }, 0);
   }
 
   private patchPlayback(cardId: string, patch: Partial<CardPlayback>): void {

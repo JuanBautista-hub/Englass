@@ -6,7 +6,7 @@ export interface MockSynthesis {
   durationMs: number;
 }
 
-const SAMPLE_RATE = 16_000;
+const SAMPLE_RATE = 22_050;
 const BITS_PER_SAMPLE = 16;
 const CHANNELS = 1;
 
@@ -40,26 +40,71 @@ export class TtsService {
   private readonly logger = new Logger(TtsService.name);
 
   synthesizeMock(text: string): MockSynthesis {
-    const words = text.trim().split(/\s+/).filter(Boolean).length || 1;
-    const approxDurationMs = Math.min(8000, Math.max(700, words * 380));
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    const wordCount = Math.max(1, words.length);
+    const perWordMs = 320;
+    const gapMs = 80;
+    const approxDurationMs = Math.min(8000, wordCount * perWordMs + (wordCount - 1) * gapMs);
     const sampleCount = Math.floor((approxDurationMs / 1000) * SAMPLE_RATE);
     const dataBytes = sampleCount * (BITS_PER_SAMPLE / 8);
     const header = buildWavHeader(dataBytes);
     const data = new Uint8Array(dataBytes);
     const view = new DataView(data.buffer);
-    const baseFreq = 180 + (text.length % 5) * 25;
-    const amplitude = 0.18 * 0x7fff;
+
+    const amplitude = 0.45 * 0x7fff;
+    const attack = 0.015;
+    const release = 0.04;
+    const totalSec = approxDurationMs / 1000;
+
+    const wordFreqs: number[] = words.map((w) => {
+      const hash = [...w].reduce((acc, ch) => acc * 31 + ch.charCodeAt(0), 7);
+      const base = 392 + (Math.abs(hash) % 5) * 66;
+      return base + (text.length % 3) * 33;
+    });
+    if (wordFreqs.length === 0) {
+      wordFreqs.push(440);
+    }
+
     for (let i = 0; i < sampleCount; i++) {
       const t = i / SAMPLE_RATE;
-      const envelope = Math.min(1, Math.min(t / 0.05, (approxDurationMs / 1000 - t) / 0.1));
-      const sample = Math.sin(2 * Math.PI * baseFreq * t) * amplitude * envelope;
-      view.setInt16(i * 2, sample | 0, true);
+      const wordIdx = Math.min(wordCount - 1, Math.floor(t / ((perWordMs + gapMs) / 1000)));
+      const wordStart = wordIdx * (perWordMs + gapMs) / 1000;
+      const localT = t - wordStart;
+      const wordSec = perWordMs / 1000;
+
+      let env = 0;
+      if (localT >= 0 && localT < wordSec) {
+        if (localT < attack) {
+          env = localT / attack;
+        } else if (localT > wordSec - release) {
+          env = Math.max(0, (wordSec - localT) / release);
+        } else {
+          env = 1;
+        }
+      }
+
+      const baseFreq = wordFreqs[wordIdx] ?? 440;
+      const vibrato = Math.sin(2 * Math.PI * 5 * t) * 8;
+      const freq = baseFreq + vibrato;
+      const sample = Math.sin(2 * Math.PI * freq * t) * amplitude * env;
+      view.setInt16(i * 2, clamp16(sample), true);
     }
+
     const buffer = new Uint8Array(header.length + data.length);
     buffer.set(header, 0);
     buffer.set(data, header.length);
     const voice = text.length % 2 === 0 ? 'mock-female' : 'mock-male';
-    this.logger.debug(`mock TTS: ${words} words, ${approxDurationMs}ms, voice=${voice}`);
+    this.logger.debug(`mock TTS: ${wordCount} words, ${approxDurationMs}ms, voice=${voice}`);
     return { buffer, voice, durationMs: approxDurationMs };
   }
+}
+
+function clamp16(sample: number): number {
+  if (sample > 0x7fff) {
+    return 0x7fff;
+  }
+  if (sample < -0x8000) {
+    return -0x8000;
+  }
+  return sample | 0;
 }
