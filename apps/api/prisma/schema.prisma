@@ -19,19 +19,20 @@ datasource db {
 }
 
 model User {
-  id             String           @id @default(cuid())
-  email          String           @unique
-  passwordHash   String           @map("password_hash")
-  displayName    String           @map("display_name")
-  currentStreak  Int              @default(0) @map("current_streak")
-  bestStreak     Int              @default(0) @map("best_streak")
-  lastReviewedAt DateTime?        @map("last_reviewed_at")
-  createdAt      DateTime         @default(now()) @map("created_at")
-  updatedAt      DateTime         @updatedAt @map("updated_at")
-  lessons        Lesson[]
-  cardProgress   CardProgress[]
-  reviewLogs     ReviewLog[]
-  achievements   UserAchievement[]
+  id               String            @id @default(cuid())
+  email            String            @unique
+  passwordHash     String            @map("password_hash")
+  displayName      String            @map("display_name")
+  currentStreak    Int               @default(0) @map("current_streak")
+  bestStreak       Int               @default(0) @map("best_streak")
+  lastReviewedAt   DateTime?         @map("last_reviewed_at")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  lessons          Lesson[]
+  cardProgress     CardProgress[]
+  reviewLogs       ReviewLog[]
+  achievements     UserAchievement[]
+  aiHistoryEntries AiHistoryEntry[]
 
   @@map("users")
 }
@@ -69,21 +70,22 @@ model Lesson {
 }
 
 model VocabularyCard {
-  id           String         @id @default(cuid())
-  lessonId     String         @map("lesson_id")
-  lesson       Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  term         String
-  definition   String
-  example      String?
-  translation  String?
-  explanationEs String?       @map("explanation_es") @db.Text
-  audioKey     String?        @map("audio_key")
-  level        String         @default("A1")
-  ordinal      Int            @default(0)
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
-  progress     CardProgress[]
-  reviewLogs   ReviewLog[]
+  id               String           @id @default(cuid())
+  lessonId         String           @map("lesson_id")
+  lesson           Lesson           @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  term             String
+  definition       String
+  example          String?
+  translation      String?
+  explanationEs    String?          @map("explanation_es") @db.Text
+  audioKey         String?          @map("audio_key")
+  level            String           @default("A1")
+  ordinal          Int              @default(0)
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  progress         CardProgress[]
+  reviewLogs       ReviewLog[]
+  aiHistoryEntries AiHistoryEntry[]
 
   @@unique([lessonId, ordinal])
   @@index([lessonId])
@@ -112,18 +114,18 @@ model CardProgress {
 }
 
 model ReviewLog {
-  id              String         @id @default(cuid())
-  userId          String         @map("user_id")
-  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cardId          String         @map("card_id")
-  card            VocabularyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  rating          String
-  reviewedAt      DateTime       @default(now()) @map("reviewed_at")
-  prevIntervalDays Int           @map("prev_interval_days")
-  newIntervalDays  Int           @map("new_interval_days")
-  prevEaseFactor   Float         @map("prev_ease_factor")
-  newEaseFactor    Float         @map("new_ease_factor")
-  lapsesAfter      Int           @map("lapses_after")
+  id               String         @id @default(cuid())
+  userId           String         @map("user_id")
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId           String         @map("card_id")
+  card             VocabularyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  rating           String
+  reviewedAt       DateTime       @default(now()) @map("reviewed_at")
+  prevIntervalDays Int            @map("prev_interval_days")
+  newIntervalDays  Int            @map("new_interval_days")
+  prevEaseFactor   Float          @map("prev_ease_factor")
+  newEaseFactor    Float          @map("new_ease_factor")
+  lapsesAfter      Int            @map("lapses_after")
 
   @@index([userId, reviewedAt])
   @@index([cardId])
@@ -153,4 +155,23 @@ model UserAchievement {
   @@unique([userId, achievementId])
   @@index([userId])
   @@map("user_achievements")
+}
+
+model AiHistoryEntry {
+  id         String         @id @default(cuid())
+  userId     String         @map("user_id")
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId     String         @map("card_id")
+  card       VocabularyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  lessonId   String         @map("lesson_id")
+  mode       String
+  level      String
+  payload    Json
+  tokensUsed Int            @default(0) @map("tokens_used")
+  cached     Boolean        @default(false)
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@index([userId, cardId, mode, createdAt])
+  @@map("ai_history_entries")
 }

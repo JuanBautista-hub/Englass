@@ -13,3 +13,38 @@ export { ERROR_CODE_BY_STATUS, isErrorEnvelope } from './error-envelope.js';
 export { SharedValidationError } from './validators/errors.js';
 export { assertAnnotation } from './validators/annotation.js';
 export { assertSubmissionPayload } from './validators/submission.js';
+
+export type {
+  LessonLevel,
+  LessonPermissionFlags,
+  LessonCardView,
+  LessonView,
+  EnrollResult,
+} from './lesson.js';
+
+export type {
+  Rating,
+  RatingCounts,
+  StudySessionSummary,
+  DueCardView,
+  ApplyReviewApiResult,
+} from './study.js';
+export {
+  RATINGS,
+  LAST_RATINGS_LIMIT,
+  isRating,
+  emptyRatingCounts,
+  computeRetentionPct,
+} from './study.js';
+
+export type { MeView } from './me.js';
+
+export type {
+  AiMode,
+  CefrCode,
+  AiExplainResponse,
+  AiDeepenResponse,
+  AiHistoryEntry,
+  AiErrorCode,
+} from './ai.js';
+export { EXPLAIN_MAX_TOKENS, DEEPEN_MAX_TOKENS, isAiMode } from './ai.js';

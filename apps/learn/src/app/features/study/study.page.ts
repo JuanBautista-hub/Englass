@@ -4,7 +4,22 @@ import { DueCard, Rating, ReviewService } from '../../core/services/review.servi
 import { MasteryLabelsService } from '../../core/services/mastery-labels.service';
 import { TtsSegmentsService } from '../../core/services/tts-segments.service';
 import { TtsService } from '../../core/services/tts.service';
-import { BilingualSegment } from '../../core/models';
+import {
+  AiDeepenResponse,
+  AiExplainResponse,
+  BilingualSegment,
+} from '../../core/models';
+import { AiService } from '../../core/services/ai.service';
+import {
+  AiRateLimitedError,
+  AiProviderError,
+  AiDisabledError,
+} from '../../core/services/ai-errors';
+import { environment } from '../../../environments/environment';
+import {
+  AiHistoryEntry,
+  AiResponseModalComponent,
+} from '../lessons/ai-response-modal.component';
 
 interface SessionSummary {
   total: number;
@@ -19,12 +34,20 @@ interface SessionSummary {
 @Component({
   selector: 'app-study',
   standalone: true,
-  imports: [RouterLink],
+  imports: [RouterLink, AiResponseModalComponent],
   template: `
     <a routerLink="/lessons"
        class="inline-block text-sm text-slate-600 hover:text-slate-900 mb-3 focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2 rounded">
       ← Exit
     </a>
+
+    <div class="mb-2 text-xs" data-testid="ai-status-flag">
+      <span aria-hidden="true">{{ aiEnabled ? '✓' : '✕' }}</span>
+      <span>AI: <strong>{{ aiEnabled ? 'ON' : 'OFF' }}</strong></span>
+      @if (!aiEnabled) {
+        <span class="ml-2 text-slate-500">Set <code>AI_ENABLED=true</code> and run <code>pnpm sync-env</code>.</span>
+      }
+    </div>
 
     @if (lessonTitle(); as title) {
       <h2 class="text-xl font-semibold text-slate-900 mt-1 mb-3">{{ title }}</h2>
@@ -162,6 +185,19 @@ interface SessionSummary {
                   </details>
                 }
 
+                @if (aiEnabled && flipped() && c.cardId) {
+                  <div class="mt-3" data-testid="ai-buttons">
+                    <button
+                      type="button"
+                      class="px-2.5 py-1 text-sm rounded-md border border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+                      (click)="openAiDrawer(c.cardId)"
+                      [disabled]="aiIsLoading()"
+                      title="Abrir asistente de IA"
+                      data-testid="ai-open-drawer"
+                    >✨ Asistente IA</button>
+                  </div>
+                }
+
                 @if (c.lastRatings && c.lastRatings.length > 0) {
                   <div class="mt-3">
                     <div class="text-xs uppercase tracking-wide text-slate-500 mb-1">Your recent ratings</div>
@@ -219,6 +255,19 @@ interface SessionSummary {
         }
       }
     }
+
+    <app-ai-response-modal
+      [isOpen]="aiModalOpen()"
+      [mode]="aiModalMode()"
+      [history]="aiModalHistory()"
+      [isLoading]="aiIsLoading()"
+      [lessonId]="aiLessonId"
+      [cardId]="aiModalCardId()"
+      (closed)="closeAiModal()"
+      (requested)="onAiRequested($event)"
+      (retried)="onAiRetried($event)"
+      (deleted)="onAiDeleted($event)"
+    ></app-ai-response-modal>
   `,
 })
 export class StudyPage implements OnInit {
@@ -227,6 +276,15 @@ export class StudyPage implements OnInit {
   private readonly masteryLabels = inject(MasteryLabelsService);
   private readonly tts = inject(TtsService);
   private readonly ttsSegments = inject(TtsSegmentsService);
+  private readonly ai = inject(AiService);
+
+  protected readonly aiEnabled = environment.aiEnabled;
+  protected readonly aiModalOpen = signal(false);
+  protected readonly aiModalMode = signal<'explain' | 'deepen'>('explain');
+  protected readonly aiModalCardId = signal<string | null>(null);
+  protected readonly aiModalHistory = signal<AiHistoryEntry[]>([]);
+  protected readonly aiIsLoading = signal(false);
+  protected aiLessonId: string | null = null;
 
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
@@ -290,6 +348,153 @@ export class StudyPage implements OnInit {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  openAiDrawer(cardId: string): void {
+    if (!this.aiEnabled) {
+      return;
+    }
+    if (this.aiModalCardId() !== cardId) {
+      this.aiModalHistory.set([]);
+    }
+    this.aiModalCardId.set(cardId);
+    this.aiModalOpen.set(true);
+    void this.loadAiHistory(cardId);
+  }
+
+  closeAiModal(): void {
+    this.aiModalOpen.set(false);
+    this.aiIsLoading.set(false);
+    this.aiModalCardId.set(null);
+    this.aiModalHistory.set([]);
+    this.aiModalMode.set('explain');
+  }
+
+  onAiRequested(mode: 'explain' | 'deepen'): void {
+    const cardId = this.aiModalCardId();
+    if (!cardId || !this.aiEnabled) {
+      return;
+    }
+    this.aiModalMode.set(mode);
+    void this.runAiCall(cardId, mode, null);
+  }
+
+  onAiRetried(payload: { entryId: string; mode: 'explain' | 'deepen' }): void {
+    const cardId = this.aiModalCardId();
+    if (!cardId || !this.aiEnabled) {
+      return;
+    }
+    void this.runAiCall(cardId, payload.mode, payload.entryId);
+  }
+
+  onAiDeleted(entryId: string): void {
+    this.aiModalHistory.update((entries) => entries.filter((e) => e.id !== entryId));
+    void this.ai.deleteHistory(entryId).catch((err: unknown) => {
+      this.lastError.set(err instanceof Error ? err.message : 'history_delete_failed');
+    });
+  }
+
+  private async loadAiHistory(cardId: string): Promise<void> {
+    const lessonId = this.aiLessonId;
+    if (!lessonId || !this.aiEnabled) {
+      return;
+    }
+    try {
+      const entries = await this.ai.history(lessonId, cardId);
+      const loaded: AiHistoryEntry[] = entries.map((row) => ({
+        id: row.id,
+        mode: row.mode,
+        createdAt: Date.parse(row.createdAt),
+        savedToDb: true,
+        state:
+          row.mode === 'explain'
+            ? { kind: 'success-explain' as const, value: row.payload as AiExplainResponse }
+            : { kind: 'success-deepen' as const, value: row.payload as AiDeepenResponse },
+      }));
+      this.aiModalHistory.set(loaded);
+    } catch (err: unknown) {
+      console.warn(
+        `ai_history_load_failed card=${cardId} error=${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  private async runAiCall(
+    cardId: string,
+    mode: 'explain' | 'deepen',
+    replaceEntryId: string | null,
+  ): Promise<void> {
+    const lessonId = this.aiLessonId;
+    if (!lessonId) {
+      return;
+    }
+    const entryId = replaceEntryId ?? this.makeEntryId();
+    const baseEntry: AiHistoryEntry = {
+      id: entryId,
+      mode,
+      createdAt: Date.now(),
+      state: { kind: 'loading' },
+      savedToDb: false,
+    };
+    if (replaceEntryId) {
+      this.aiModalHistory.update((entries) =>
+        entries.map((e) => (e.id === replaceEntryId ? baseEntry : e)),
+      );
+    } else {
+      this.aiModalHistory.update((entries) => [baseEntry, ...entries]);
+    }
+    this.aiIsLoading.set(true);
+    try {
+      if (mode === 'explain') {
+        const value = await this.ai.explain(lessonId, cardId);
+        this.aiModalHistory.update((entries) =>
+          entries.map((e) =>
+            e.id === entryId
+              ? { ...e, state: { kind: 'success-explain' as const, value }, savedToDb: true }
+              : e,
+          ),
+        );
+      } else {
+        const value = await this.ai.deepen(lessonId, cardId);
+        this.aiModalHistory.update((entries) =>
+          entries.map((e) =>
+            e.id === entryId
+              ? { ...e, state: { kind: 'success-deepen' as const, value }, savedToDb: true }
+              : e,
+          ),
+        );
+      }
+    } catch (err) {
+      let message = 'No se pudo obtener la respuesta. Reintenta.';
+      let retryable = true;
+      if (err instanceof AiRateLimitedError) {
+        const bucket = err.bucket === 'perDay' ? 'diarias' : 'por minuto';
+        const seconds = err.retryAfterSec;
+        const minutes = Math.max(1, Math.ceil(seconds / 60));
+        message = `Has alcanzado el límite ${bucket}. Vuelve a intentarlo en ${minutes} min.`;
+      } else if (err instanceof Error && err.name === AiProviderError.name) {
+        message = 'El servicio de IA no responde ahora mismo. Reintenta en unos segundos.';
+      } else if (err instanceof Error && err.name === AiDisabledError.name) {
+        message = 'Las llamadas a IA están desactivadas por configuración.';
+        retryable = false;
+      }
+      this.aiModalHistory.update((entries) =>
+        entries.map((e) =>
+          e.id === entryId
+            ? { ...e, state: { kind: 'error' as const, message, retryable } }
+            : e,
+        ),
+      );
+    } finally {
+      this.aiIsLoading.set(false);
+    }
+  }
+
+  private makeEntryId(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   }
 
   async speakText(text: string, lang: 'en-US' | 'es-ES', rate: number): Promise<void> {
@@ -414,6 +619,7 @@ export class StudyPage implements OnInit {
     this.loading.set(true);
     this.error.set(null);
     this.segmentsCache.clear();
+    this.aiLessonId = lessonId;
     try {
       const due = await this.review.dueForLesson(lessonId);
       this.queue.set(due);

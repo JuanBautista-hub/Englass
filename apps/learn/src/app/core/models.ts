@@ -173,3 +173,40 @@ export interface LearningPathLevel {
   status: PathLevelStatus;
   lessons: LearningPathLesson[];
 }
+
+export type AiMode = 'explain' | 'deepen';
+
+export interface AiExplainResponse {
+  summary: string;
+  examples: string[];
+  examplesEs: string[];
+  cached: boolean;
+}
+
+export interface AiDeepenResponse {
+  context: string;
+  collocations: string[];
+  falseFriends: string[];
+  examples: string[];
+  examplesEs: string[];
+  cached: boolean;
+}
+
+export interface AiHistoryEntry {
+  id: string;
+  cardId: string;
+  lessonId: string;
+  mode: AiMode;
+  level: string;
+  payload: AiExplainResponse | AiDeepenResponse;
+  tokensUsed: number;
+  cached: boolean;
+  createdAt: string;
+}
+
+export interface AiError {
+  statusCode: number;
+  code: string;
+  message: string;
+  details?: unknown;
+}

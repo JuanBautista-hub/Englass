@@ -6,7 +6,25 @@ import { LessonsService } from '../../core/services/lessons.service';
 import { MasteryLabelsService } from '../../core/services/mastery-labels.service';
 import { TtsSegmentsService } from '../../core/services/tts-segments.service';
 import { TtsService } from '../../core/services/tts.service';
-import { BilingualSegment, Lesson, Mastery, VocabularyCard } from '../../core/models';
+import { AiService } from '../../core/services/ai.service';
+import {
+  AiRateLimitedError,
+  AiProviderError,
+  AiDisabledError,
+} from '../../core/services/ai-errors';
+import { environment } from '../../../environments/environment';
+import {
+  AiDeepenResponse,
+  AiExplainResponse,
+  BilingualSegment,
+  Lesson,
+  Mastery,
+  VocabularyCard,
+} from '../../core/models';
+import {
+  AiHistoryEntry,
+  AiResponseModalComponent,
+} from './ai-response-modal.component';
 
 interface CardSpeechState {
   speaking: 'en' | 'es' | null;
@@ -23,9 +41,22 @@ interface BilingualPlayback {
 @Component({
   selector: 'app-lesson-detail',
   standalone: true,
-  imports: [FormsModule, RouterLink, UpperCasePipe],
+  imports: [FormsModule, RouterLink, UpperCasePipe, AiResponseModalComponent],
   template: `
     <a routerLink="/lessons" class="inline-block text-sm text-slate-600 hover:text-slate-900 mb-3">← Back</a>
+
+    <div class="mb-2 text-xs" data-testid="ai-status-flag">
+      <span
+        class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full"
+        [class]="aiEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'"
+      >
+        <span aria-hidden="true">{{ aiEnabled ? '✓' : '✕' }}</span>
+        <span>AI: <strong>{{ aiEnabled ? 'ON' : 'OFF' }}</strong></span>
+      </span>
+      @if (!aiEnabled) {
+        <span class="ml-2 text-slate-500">Set <code>AI_ENABLED=true</code> and run <code>pnpm sync-env</code>.</span>
+      }
+    </div>
 
     @if (lesson(); as l) {
       <section class="bg-white border border-slate-200 rounded-lg p-4 mb-3">
@@ -102,6 +133,18 @@ interface BilingualPlayback {
                 >
                   🔊 Hablar (ES)
                 </button>
+                @if (aiEnabled) {
+                  <button
+                    type="button"
+                    class="ml-1 pl-2 border-l border-slate-200 px-2.5 py-1 text-sm rounded-md border border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2"
+                    (click)="openAiDrawer(c.id)"
+                    [disabled]="aiIsLoading()"
+                    title="Abrir asistente de IA"
+                    data-testid="ai-open-drawer"
+                  >
+                    ✨ Asistente IA
+                  </button>
+                }
               </div>
             </div>
 
@@ -234,6 +277,19 @@ interface BilingualPlayback {
         class="inline-block mt-2 bg-slate-900 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-700 no-underline"
       >Go to catalogue</a>
     }
+
+    <app-ai-response-modal
+      [isOpen]="aiModalOpen()"
+      [mode]="aiModalMode()"
+      [history]="aiModalHistory()"
+      [isLoading]="aiIsLoading()"
+      [lessonId]="lesson()?.id ?? null"
+      [cardId]="aiModalCardId()"
+      (closed)="closeAiModal()"
+      (requested)="onAiRequested($event)"
+      (retried)="onAiRetried($event)"
+      (deleted)="onAiDeleted($event)"
+    />
   `,
 })
 export class LessonDetailPage implements OnInit, OnDestroy {
@@ -243,6 +299,15 @@ export class LessonDetailPage implements OnInit, OnDestroy {
   private readonly masteryLabels = inject(MasteryLabelsService);
   private readonly tts = inject(TtsService);
   private readonly ttsSegments = inject(TtsSegmentsService);
+  private readonly ai = inject(AiService);
+  private readonly consoleRef = console;
+
+  protected readonly aiEnabled = environment.aiEnabled;
+  protected readonly aiModalOpen = signal(false);
+  protected readonly aiModalMode = signal<'explain' | 'deepen'>('explain');
+  protected readonly aiModalCardId = signal<string | null>(null);
+  protected readonly aiModalHistory = signal<AiHistoryEntry[]>([]);
+  protected readonly aiIsLoading = signal(false);
 
   protected readonly lesson = signal<Lesson | null>(null);
   protected readonly loading = signal(true);
@@ -256,6 +321,153 @@ export class LessonDetailPage implements OnInit, OnDestroy {
   protected cardDraft = { term: '', definition: '', example: '', translation: '', explanationEs: '' };
 
   private readonly segmentsCache = new Map<string, BilingualSegment[]>();
+
+  openAiDrawer(cardId: string): void {
+    if (!this.aiEnabled) {
+      return;
+    }
+    if (this.aiModalCardId() !== cardId) {
+      this.aiModalHistory.set([]);
+    }
+    this.aiModalCardId.set(cardId);
+    this.aiModalOpen.set(true);
+    void this.loadAiHistory(cardId);
+  }
+
+  closeAiModal(): void {
+    this.aiModalOpen.set(false);
+    this.aiIsLoading.set(false);
+    this.aiModalCardId.set(null);
+    this.aiModalHistory.set([]);
+    this.aiModalMode.set('explain');
+  }
+
+  onAiRequested(mode: 'explain' | 'deepen'): void {
+    const cardId = this.aiModalCardId();
+    if (!cardId || !this.aiEnabled) {
+      return;
+    }
+    this.aiModalMode.set(mode);
+    void this.runAiCall(cardId, mode, null);
+  }
+
+  onAiRetried(payload: { entryId: string; mode: 'explain' | 'deepen' }): void {
+    const cardId = this.aiModalCardId();
+    if (!cardId || !this.aiEnabled) {
+      return;
+    }
+    void this.runAiCall(cardId, payload.mode, payload.entryId);
+  }
+
+  onAiDeleted(entryId: string): void {
+    this.aiModalHistory.update((entries) => entries.filter((e) => e.id !== entryId));
+    void this.ai.deleteHistory(entryId).catch((err: unknown) => {
+      this.error.set(err instanceof Error ? err.message : 'history_delete_failed');
+    });
+  }
+
+  private async loadAiHistory(cardId: string): Promise<void> {
+    const lesson = this.lesson();
+    if (!lesson || !this.aiEnabled) {
+      return;
+    }
+    try {
+      const entries = await this.ai.history(lesson.id, cardId);
+      const loaded: AiHistoryEntry[] = entries.map((row) => ({
+        id: row.id,
+        mode: row.mode,
+        createdAt: Date.parse(row.createdAt),
+        savedToDb: true,
+        state:
+          row.mode === 'explain'
+            ? { kind: 'success-explain' as const, value: row.payload as AiExplainResponse }
+            : { kind: 'success-deepen' as const, value: row.payload as AiDeepenResponse },
+      }));
+      this.aiModalHistory.set(loaded);
+    } catch (err: unknown) {
+      this.consoleRef.warn(
+        `ai_history_load_failed card=${cardId} error=${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  private async runAiCall(
+    cardId: string,
+    mode: 'explain' | 'deepen',
+    replaceEntryId: string | null,
+  ): Promise<void> {
+    const lesson = this.lesson();
+    if (!lesson) {
+      return;
+    }
+    const entryId = replaceEntryId ?? this.makeEntryId();
+    const baseEntry: AiHistoryEntry = {
+      id: entryId,
+      mode,
+      createdAt: Date.now(),
+      state: { kind: 'loading' },
+      savedToDb: false,
+    };
+    if (replaceEntryId) {
+      this.aiModalHistory.update((entries) =>
+        entries.map((e) => (e.id === replaceEntryId ? baseEntry : e)),
+      );
+    } else {
+      this.aiModalHistory.update((entries) => [baseEntry, ...entries]);
+    }
+    this.aiIsLoading.set(true);
+    try {
+      if (mode === 'explain') {
+        const value = await this.ai.explain(lesson.id, cardId);
+        this.aiModalHistory.update((entries) =>
+          entries.map((e) =>
+            e.id === entryId
+              ? { ...e, state: { kind: 'success-explain' as const, value }, savedToDb: true }
+              : e,
+          ),
+        );
+      } else {
+        const value = await this.ai.deepen(lesson.id, cardId);
+        this.aiModalHistory.update((entries) =>
+          entries.map((e) =>
+            e.id === entryId
+              ? { ...e, state: { kind: 'success-deepen' as const, value }, savedToDb: true }
+              : e,
+          ),
+        );
+      }
+    } catch (err) {
+      let message = 'No se pudo obtener la respuesta. Reintenta.';
+      let retryable = true;
+      if (err instanceof AiRateLimitedError) {
+        const bucket = err.bucket === 'perDay' ? 'diarias' : 'por minuto';
+        const seconds = err.retryAfterSec;
+        const minutes = Math.max(1, Math.ceil(seconds / 60));
+        message = `Has alcanzado el límite ${bucket}. Vuelve a intentarlo en ${minutes} min.`;
+      } else if (err instanceof Error && err.name === 'AiProviderError') {
+        message = 'El servicio de IA no responde ahora mismo. Reintenta en unos segundos.';
+      } else if (err instanceof Error && err.name === 'AiDisabledError') {
+        message = 'Las llamadas a IA están desactivadas por configuración.';
+        retryable = false;
+      }
+      this.aiModalHistory.update((entries) =>
+        entries.map((e) =>
+          e.id === entryId
+            ? { ...e, state: { kind: 'error' as const, message, retryable } }
+            : e,
+        ),
+      );
+    } finally {
+      this.aiIsLoading.set(false);
+    }
+  }
+
+  private makeEntryId(): string {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
 
   async ngOnInit(): Promise<void> {
     const id = this.route.snapshot.paramMap.get('id');
