@@ -1,37 +1,49 @@
 import { Injectable, inject } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { firstValueFrom, Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { Lesson } from '../models';
-import { AuthService } from './auth.service';
+import { Lesson, VocabularyCard } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class LessonsService {
   private readonly http = inject(HttpClient);
-  private readonly auth = inject(AuthService);
 
   list(): Promise<Lesson[]> {
-    return firstValueFrom(this.http.get<Lesson[]>(this.url('')));
+    return firstValueFrom(this.http.get<Lesson[]>(`${environment.apiBaseUrl}/lessons`));
   }
 
   get(id: string): Promise<Lesson> {
-    return firstValueFrom(this.http.get<Lesson>(this.url(`/${id}`)));
+    return firstValueFrom(this.http.get<Lesson>(`${environment.apiBaseUrl}/lessons/${id}`));
   }
 
-  create(input: { title: string; prompt: string; translation?: string; level?: string }): Promise<Lesson> {
-    return firstValueFrom(this.http.post<Lesson>(this.url(''), input));
+  create(input: {
+    title: string;
+    description?: string;
+    level?: string;
+    categoryId: string;
+  }): Promise<Lesson> {
+    return firstValueFrom(this.http.post<Lesson>(`${environment.apiBaseUrl}/lessons`, input));
   }
 
-  update(id: string, input: Partial<Lesson>): Promise<Lesson> {
-    return firstValueFrom(this.http.patch<Lesson>(this.url(`/${id}`), input));
+  addCard(
+    lessonId: string,
+    input: {
+      term: string;
+      definition: string;
+      example?: string;
+      translation?: string;
+      level?: string;
+    },
+  ): Promise<VocabularyCard> {
+    return firstValueFrom(
+      this.http.post<VocabularyCard>(
+        `${environment.apiBaseUrl}/lessons/${lessonId}/cards`,
+        input,
+      ),
+    );
   }
 
   remove(id: string): Observable<void> {
-    return this.http.delete<void>(this.url(`/${id}`));
-  }
-
-  private url(path: string): string {
-    const headers = new HttpHeaders({ Authorization: `Bearer ${this.auth.getToken() ?? ''}` });
-    return `${environment.apiBaseUrl}/lessons${path}`;
+    return this.http.delete<void>(`${environment.apiBaseUrl}/lessons/${id}`);
   }
 }

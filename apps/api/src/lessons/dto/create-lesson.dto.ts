@@ -9,17 +9,16 @@ export class CreateLessonDto {
   @MaxLength(120)
   title!: string;
 
-  @IsString()
-  @MinLength(1)
-  @MaxLength(500)
-  prompt!: string;
-
   @IsOptional()
   @IsString()
   @MaxLength(500)
-  translation?: string;
+  description?: string;
 
   @IsOptional()
   @IsIn(LEVELS)
   level?: Level;
+
+  @IsString()
+  @MinLength(1)
+  categoryId!: string;
 }

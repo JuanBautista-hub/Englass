@@ -1,3 +1,14 @@
+// Engclass vocabulary domain (Paso 1).
+//
+// Entities:
+//   - Category   technical vocabulary domains (devops, frontend, backend, cloud)
+//   - Lesson     thematic grouping owned by a user, scoped to one category
+//   - VocabularyCard
+//                atomic flashcard belonging to a lesson (term, definition, ...)
+//   - CardProgress
+//                per-user, per-card SRS state used by SM-2
+//   - ReviewLog  immutable history of every review (used for analytics + Leitner
+//                fallback if we ever decide to drop SM-2)
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,29 +19,106 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  displayName  String   @map("display_name")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
+  id           String         @id @default(cuid())
+  email        String         @unique
+  passwordHash String         @map("password_hash")
+  displayName  String         @map("display_name")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
   lessons      Lesson[]
+  cardProgress CardProgress[]
+  reviewLogs   ReviewLog[]
 
   @@map("users")
 }
 
-model Lesson {
+model Category {
   id          String   @id @default(cuid())
-  title       String
-  prompt      String
-  translation String?
-  level       String   @default("A1")
-  audioKey    String?  @map("audio_key")
-  ownerId     String   @map("owner_id")
-  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  slug        String   @unique
+  name        String
+  description String?
+  iconKey     String?  @map("icon_key")
   createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  lessons     Lesson[]
+
+  @@map("categories")
+}
+
+model Lesson {
+  id          String           @id @default(cuid())
+  title       String
+  description String?
+  level       String           @default("A1")
+  categoryId  String           @map("category_id")
+  category    Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  ownerId     String           @map("owner_id")
+  owner       User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  cards       VocabularyCard[]
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
 
   @@index([ownerId])
+  @@index([categoryId])
   @@map("lessons")
+}
+
+model VocabularyCard {
+  id          String         @id @default(cuid())
+  lessonId    String         @map("lesson_id")
+  lesson      Lesson         @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  term        String
+  definition  String
+  example     String?
+  translation String?
+  audioKey    String?        @map("audio_key")
+  level       String         @default("A1")
+  ordinal     Int            @default(0)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  progress    CardProgress[]
+  reviewLogs  ReviewLog[]
+
+  @@unique([lessonId, ordinal])
+  @@index([lessonId])
+  @@map("vocabulary_cards")
+}
+
+model CardProgress {
+  id             String         @id @default(cuid())
+  userId         String         @map("user_id")
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId         String         @map("card_id")
+  card           VocabularyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  // SM-2 fields
+  easeFactor     Float          @default(2.5) @map("ease_factor")
+  intervalDays   Int            @default(0) @map("interval_days")
+  repetitions    Int            @default(0)
+  lapses         Int            @default(0)
+  dueAt          DateTime       @default(now()) @map("due_at")
+  lastReviewedAt DateTime?      @map("last_reviewed_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  @@unique([userId, cardId])
+  @@index([userId, dueAt])
+  @@map("card_progress")
+}
+
+model ReviewLog {
+  id               String         @id @default(cuid())
+  userId           String         @map("user_id")
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId           String         @map("card_id")
+  card             VocabularyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  rating           String
+  reviewedAt       DateTime       @default(now()) @map("reviewed_at")
+  prevIntervalDays Int            @map("prev_interval_days")
+  newIntervalDays  Int            @map("new_interval_days")
+  prevEaseFactor   Float          @map("prev_ease_factor")
+  newEaseFactor    Float          @map("new_ease_factor")
+  lapsesAfter      Int            @map("lapses_after")
+
+  @@index([userId, reviewedAt])
+  @@index([cardId])
+  @@map("review_logs")
 }

@@ -13,6 +13,7 @@ import {
 import { LessonsService } from './lessons.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
+import { CreateCardDto } from './dto/create-card.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 interface AuthenticatedRequest {
@@ -53,5 +54,20 @@ export class LessonsController {
   @HttpCode(204)
   async remove(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     await this.lessons.remove(id, req.user.id);
+  }
+
+  @Get(':id/cards')
+  listCards(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    return this.lessons.listCards(id, req.user.id);
+  }
+
+  @Post(':id/cards')
+  @HttpCode(201)
+  addCard(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: CreateCardDto,
+  ) {
+    return this.lessons.addCard(id, req.user.id, dto);
   }
 }

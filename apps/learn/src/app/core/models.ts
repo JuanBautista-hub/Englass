@@ -9,14 +9,33 @@ export interface AuthResponse {
   user: AuthUser;
 }
 
+export interface Category {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  iconKey: string | null;
+}
+
+export interface VocabularyCard {
+  id: string;
+  term: string;
+  definition: string;
+  example: string | null;
+  translation: string | null;
+  audioKey: string | null;
+  level: string;
+  ordinal: number;
+}
+
 export interface Lesson {
   id: string;
   title: string;
-  prompt: string;
-  translation: string | null;
+  description: string | null;
   level: string;
-  audioKey: string | null;
+  categoryId: string;
   ownerId: string;
+  cards: VocabularyCard[];
   createdAt: string;
   updatedAt: string;
 }

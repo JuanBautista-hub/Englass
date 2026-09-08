@@ -1,16 +1,85 @@
 # Engclass voice-lessons slice (feat/voice-lessons)
 
-Minimum end-to-end slice on top of the Fase 1 (PDF annotation) repo:
+End-to-end slice on top of the Fase 1 (PDF annotation) repo.
 
-- **`apps/api`** — NestJS + Prisma + PostgreSQL + JWT.
-  - `POST /api/v1/auth/signup`, `POST /api/v1/auth/login`
-  - `GET / POST / PATCH / DELETE /api/v1/lessons` (auth required)
-  - `POST /api/v1/tts` → `audio/wav` (mock sine-wave tone; placeholder for Polly/ElevenLabs)
-  - `GET /api/v1/health`
-- **`apps/learn`** — Angular 17 PWA with `@angular/service-worker`.
-  - `/login` (sign in or create account)
-  - `/lessons` (list + create)
-  - `/lessons/:id` (play TTS via `<audio>`)
+## Roadmap phases
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1. Diseño de contenido y datos | Domain model, categories, flashcards, SM-2 SRS | **done (this commit)** |
+| 2. Core backend & API | Auth, lessons, TTS, review endpoints, STT, scoring | partial (auth + lessons + TTS done; review endpoints pending) |
+| 3. Frontend / UX | Flashcards UI, audio with one click, code/phrase completion | minimal (lesson list + TTS per card; full UI in step 3) |
+
+## Domain model
+
+```
+User ───< Lesson >── Category (DevOps | Frontend | Backend | Cloud)
+            │
+            └──< VocabularyCard >── CardProgress (per user, SM-2 state)
+                          │
+                          └──< ReviewLog (immutable history)
+```
+
+### `apps/api/prisma/schema.prisma`
+
+| Model | Purpose |
+|---|---|
+| `User` | Identity, auth credentials |
+| `Category` | Technical vocabulary domain (`slug`, `name`, `description`, `iconKey`) |
+| `Lesson` | Thematic lesson owned by a user, scoped to one category |
+| `VocabularyCard` | Atomic flashcard (term, definition, example, translation, ordinal) |
+| `CardProgress` | Per-user, per-card SRS state (ease, interval, reps, lapses, dueAt) |
+| `ReviewLog` | Immutable review history for analytics & future algorithms |
+
+### SRS — SuperMemo 2
+
+`apps/api/src/srs/sm2.ts` is a pure, side-effect-free SM-2 implementation:
+
+- `RATINGS = ['again', 'hard', 'good', 'easy']` (mapped to q = 0, 3, 4, 5)
+- `initialSrsState()` → `{ easeFactor: 2.5, intervalDays: 0, repetitions: 0, lapses: 0, dueAt: now }`
+- `sm2Next({ rating, state, now })` → next state (clamped `easeFactor ∈ [1.3, 4.0]`, fixed 1d/6d ramp, then `interval * ef`)
+- On `q < 3`: `repetitions = 0`, `intervalDays = 1`, `lapses += 1`
+
+Run the demo to verify the math:
+
+```sh
+pnpm --filter @engclass/api exec ts-node --transpile-only scripts/sm2.demo.ts
+```
+
+Expected output:
+
+```
+rating=good  ef=2.500 interval=1d  reps=1 lapses=0 due=2025-01-02
+rating=good  ef=2.500 interval=6d  reps=2 lapses=0 due=2025-01-08
+rating=good  ef=2.500 interval=15d reps=3 lapses=0 due=2025-01-23
+rating=easy  ef=2.600 interval=38d reps=4 lapses=0 due=2025-03-02
+rating=good  ef=2.600 interval=99d reps=5 lapses=0 due=2025-06-09
+rating=again ef=1.800 interval=1d  reps=0 lapses=1 due=2025-06-10
+rating=good  ef=1.800 interval=1d  reps=1 lapses=1 due=2025-06-11
+```
+
+`SrsService` (`src/srs/srs.service.ts`) wraps the pure algorithm with Prisma:
+
+- `enrollUserInLesson(userId, lessonId)` — creates initial `CardProgress` rows (due now)
+- `listDueForUser(userId, limit=20)` — due queue
+- `applyReview(userId, cardId, rating)` — runs SM-2, persists new state, writes a `ReviewLog`
+
+## API surface (auth required unless noted)
+
+```
+POST   /api/v1/auth/signup                       # public
+POST   /api/v1/auth/login                        # public
+GET    /api/v1/health                            # public
+GET    /api/v1/categories
+POST   /api/v1/lessons
+GET    /api/v1/lessons
+GET    /api/v1/lessons/:id
+PATCH  /api/v1/lessons/:id
+DELETE /api/v1/lessons/:id
+GET    /api/v1/lessons/:id/cards
+POST   /api/v1/lessons/:id/cards
+POST   /api/v1/tts                               # body: { text } → audio/wav
+```
 
 ## Stack
 
@@ -23,30 +92,27 @@ Minimum end-to-end slice on top of the Fase 1 (PDF annotation) repo:
 | Password hashing | bcryptjs (cost 12) |
 | Frontend | Angular 17 (standalone, signals) |
 | PWA | `@angular/service-worker` + `ngsw-config.json` |
-| TTS | Mock WAV generator (replaceable with AWS Polly / ElevenLabs) |
+| TTS | Mock sine-wave WAV (replaceable with AWS Polly / ElevenLabs) |
 
 ## Run it
 
 ```sh
-# 1. Postgres
 docker compose up -d postgres
-
-# 2. Install (workspace)
 pnpm install
-
-# 3. Generate Prisma client + migrate
-pnpm --filter @engclass/api prisma:generate
 pnpm --filter @engclass/api exec prisma migrate dev --name init
-
-# 4. Start API (http://localhost:3001/api/v1)
-pnpm --filter @engclass/api start:dev
-
-# 5. Start PWA (http://localhost:4201)
-pnpm --filter @engclass/learn start
+pnpm --filter @engclass/api exec prisma db seed
+pnpm --filter @engclass/api start:dev           # :3001
+pnpm --filter @engclass/learn start              # :4201
 ```
 
-## Notes & next steps
+The seed inserts 4 categories (DevOps, Frontend, Backend, Cloud), one lesson per
+category, and three vocabulary cards per lesson.
 
-- The TTS service ships a **mock sine-wave WAV** so the whole flow works end-to-end. Swap `TtsService.synthesizeMock` for an AWS Polly / ElevenLabs call returning the same `{ buffer, voice, durationMs }` shape.
-- `@engclass/shared` is unused in this slice but is the right home for `AuthUser`, `Lesson`, `ErrorEnvelope` once we tighten the API contract.
-- Out of scope for this PR: STT (Whisper), pronunciation scoring, OpenAI/Gemini evaluation, refresh tokens, role-based access, mobile (Compose/React Native).
+## Next steps (Phase 2 → Phase 3)
+
+1. `GET /api/v1/review/due` + `POST /api/v1/review/:cardId` (rating) — wire SrsService to HTTP.
+2. Replace `TtsService.synthesizeMock` with AWS Polly / ElevenLabs keeping `{ buffer, voice, durationMs }`.
+3. STT (Whisper) and OpenAI/Gemini-based scoring for attempts.
+4. Flashcard UI: card flip, four-button rating (`again/hard/good/easy`), session stats.
+5. Move shared types (`AuthUser`, `Category`, `Lesson`, `VocabularyCard`, `CardProgress`, `Rating`) into `@engclass/shared`.
+
