@@ -1,7 +1,11 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DueCard, Rating, ReviewService } from '../../core/services/review.service';
-import { TtsService } from '../../core/services/tts.service';
+import {
+  BilingualSegment,
+  parseBilingual,
+  TtsService,
+} from '../../core/services/tts.service';
 
 interface SessionSummary {
   total: number;
@@ -117,15 +121,35 @@ interface SessionSummary {
                     <summary class="cursor-pointer text-blue-700 text-sm select-none hover:text-blue-900">
                       Explicación en español
                     </summary>
-                    <p class="mt-2 text-slate-600 text-sm leading-relaxed">{{ c.explanationEs }}</p>
-                    <button
-                      type="button"
-                      class="mt-2 px-2.5 py-1 text-xs rounded-md border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
-                      (click)="speakText(c.explanationEs!, 'es-ES', 0.95)"
-                      [disabled]="speaking() || !ttsSupported()"
-                    >
-                      🔊 Leer en español
-                    </button>
+                    <div class="mt-2 text-slate-600 text-sm leading-relaxed">
+                      @for (seg of segmentsOf(c); track $index) {
+                        <span [class]="segmentClass(c, seg, $index)">{{ seg.text }}</span>
+                      }
+                    </div>
+                    <div class="mt-2 flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        class="px-2.5 py-1 text-xs rounded-md border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+                        (click)="speakText(c.explanationEs!, 'es-ES', 0.95)"
+                        [disabled]="speaking() || !ttsSupported()"
+                      >
+                        🔊 Leer en español
+                      </button>
+                      <button
+                        type="button"
+                        class="px-2.5 py-1 text-xs rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                        (click)="speakBilingual(c)"
+                        [disabled]="speaking() || !ttsSupported()"
+                        title="Lee la explicación en español y los ejemplos en inglés"
+                      >
+                        🔊 EN+ES
+                      </button>
+                      @if (bilingualIndex() >= 0) {
+                        <span class="text-xs text-slate-500">
+                          {{ bilingualIndex() + 1 }} / {{ bilingualTotal() }}
+                        </span>
+                      }
+                    </div>
                   </details>
                 }
 
@@ -170,7 +194,11 @@ export class StudyPage implements OnInit {
   protected readonly busy = signal(false);
   protected readonly speaking = signal(false);
   protected readonly summary = signal<SessionSummary | null>(null);
+  protected readonly bilingualIndex = signal(-1);
+  protected readonly bilingualTotal = signal(0);
   protected readonly ttsSupported = signal(this.tts.isSupported());
+
+  private readonly segmentsCache = new Map<string, BilingualSegment[]>();
 
   async ngOnInit(): Promise<void> {
     const id = this.route.snapshot.paramMap.get('id');
@@ -211,7 +239,9 @@ export class StudyPage implements OnInit {
     if (!text) {
       return;
     }
+    this.tts.cancel();
     this.speaking.set(true);
+    this.bilingualIndex.set(-1);
     const handle = this.tts.speak(text, { lang, rate });
     if (!handle) {
       this.speaking.set(false);
@@ -223,6 +253,56 @@ export class StudyPage implements OnInit {
       // ignore
     } finally {
       this.speaking.set(false);
+    }
+  }
+
+  segmentsOf(card: DueCard): BilingualSegment[] {
+    if (!card.explanationEs) {
+      return [];
+    }
+    const cached = this.segmentsCache.get(card.cardId);
+    if (cached) {
+      return cached;
+    }
+    const parsed = parseBilingual(card.explanationEs);
+    this.segmentsCache.set(card.cardId, parsed);
+    return parsed;
+  }
+
+  segmentClass(card: DueCard, seg: BilingualSegment, index: number): string {
+    const isActive = this.bilingualIndex() === index && this.current()?.cardId === card.cardId;
+    if (seg.lang === 'en') {
+      return isActive
+        ? 'font-semibold text-blue-900 bg-yellow-100 rounded px-0.5'
+        : 'font-medium text-blue-700';
+    }
+    return isActive
+      ? 'bg-yellow-100 rounded px-0.5 text-slate-900'
+      : 'text-slate-600';
+  }
+
+  async speakBilingual(card: DueCard): Promise<void> {
+    if (!card.explanationEs) {
+      return;
+    }
+    this.tts.cancel();
+    this.speaking.set(true);
+    const segments = this.segmentsOf(card);
+    this.bilingualTotal.set(segments.length);
+    this.bilingualIndex.set(0);
+    try {
+      await this.tts.speakBilingual(card.explanationEs, {
+        rate: 0.95,
+        onSegment: (_seg, index, total) => {
+          this.bilingualIndex.set(index);
+          this.bilingualTotal.set(total);
+        },
+      });
+    } catch {
+      // ignore
+    } finally {
+      this.speaking.set(false);
+      this.bilingualIndex.set(-1);
     }
   }
 
@@ -244,6 +324,7 @@ export class StudyPage implements OnInit {
   private async load(lessonId: string): Promise<void> {
     this.loading.set(true);
     this.error.set(null);
+    this.segmentsCache.clear();
     try {
       const due = await this.review.dueForLesson(lessonId);
       this.queue.set(due);

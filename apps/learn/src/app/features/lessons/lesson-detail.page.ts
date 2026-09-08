@@ -3,13 +3,23 @@ import { FormsModule } from '@angular/forms';
 import { UpperCasePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { LessonsService } from '../../core/services/lessons.service';
-import { TtsService } from '../../core/services/tts.service';
+import {
+  BilingualSegment,
+  parseBilingual,
+  TtsService,
+} from '../../core/services/tts.service';
 import { Lesson, VocabularyCard } from '../../core/models';
 
 interface CardSpeechState {
   speaking: 'en' | 'es' | null;
-  field: 'term' | 'definition' | 'example' | null;
+  field: 'term' | 'definition' | 'example' | 'bilingual' | null;
   error: string | null;
+}
+
+interface BilingualPlayback {
+  cardId: string;
+  index: number;
+  total: number;
 }
 
 @Component({
@@ -129,7 +139,37 @@ interface CardSpeechState {
                 <summary class="cursor-pointer text-blue-700 text-sm select-none hover:text-blue-900">
                   Explicación en español
                 </summary>
-                <p class="mt-2 text-slate-600 text-sm leading-relaxed">{{ c.explanationEs }}</p>
+                <div class="mt-2 text-slate-600 text-sm leading-relaxed">
+                  @for (seg of segmentsOf(c.id, c.explanationEs!); track $index) {
+                    <span
+                      [class]="segmentClass(c.id, seg, $index)"
+                    >{{ seg.text }}</span>
+                  }
+                </div>
+                <div class="mt-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    class="px-2.5 py-1 text-xs rounded-md border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+                    (click)="speakSpanish(c.explanationEs!, c.id)"
+                    [disabled]="isSpeaking(c.id) || !ttsSupported()"
+                  >
+                    🔊 Leer en español
+                  </button>
+                  <button
+                    type="button"
+                    class="px-2.5 py-1 text-xs rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                    (click)="speakBilingualForCard(c.explanationEs!, c.id)"
+                    [disabled]="isSpeaking(c.id) || !ttsSupported()"
+                    title="Lee la explicación en español y los ejemplos entre comillas en inglés"
+                  >
+                    🔊 EN+ES (ejemplos en inglés)
+                  </button>
+                  @if (bilingualFor(c.id); as bp) {
+                    <span class="text-xs text-slate-500">
+                      {{ bp.index + 1 }} / {{ bp.total }}
+                    </span>
+                  }
+                </div>
               </details>
             }
 
@@ -200,8 +240,11 @@ export class LessonDetailPage implements OnInit, OnDestroy {
   protected readonly enrolling = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly speechStates = signal<Map<string, CardSpeechState>>(new Map());
+  protected readonly bilingualPlayback = signal<BilingualPlayback | null>(null);
   protected readonly ttsSupported = signal(this.tts.isSupported());
   protected cardDraft = { term: '', definition: '', example: '', translation: '', explanationEs: '' };
+
+  private readonly segmentsCache = new Map<string, BilingualSegment[]>();
 
   async ngOnInit(): Promise<void> {
     const id = this.route.snapshot.paramMap.get('id');
@@ -234,16 +277,45 @@ export class LessonDetailPage implements OnInit, OnDestroy {
     return card.explanationEs ?? card.translation;
   }
 
+  bilingualFor(cardId: string): BilingualPlayback | null {
+    const bp = this.bilingualPlayback();
+    return bp && bp.cardId === cardId ? bp : null;
+  }
+
+  segmentsOf(cardId: string, text: string): BilingualSegment[] {
+    const cached = this.segmentsCache.get(cardId);
+    if (cached) {
+      return cached;
+    }
+    const parsed = parseBilingual(text);
+    this.segmentsCache.set(cardId, parsed);
+    return parsed;
+  }
+
+  segmentClass(cardId: string, seg: BilingualSegment, index: number): string {
+    const bp = this.bilingualFor(cardId);
+    const isActive = bp && bp.index === index;
+    if (seg.lang === 'en') {
+      return isActive
+        ? 'font-semibold text-blue-900 bg-yellow-100 rounded px-0.5'
+        : 'font-medium text-blue-700';
+    }
+    return isActive
+      ? 'bg-yellow-100 rounded px-0.5 text-slate-900'
+      : 'text-slate-600';
+  }
+
   async speak(
     text: string,
     cardId: string,
     lang: 'en' | 'es',
-    field: 'term' | 'definition' | 'example' | null,
+    field: 'term' | 'definition' | 'example' | 'bilingual' | null,
   ): Promise<void> {
     if (!text) {
       return;
     }
     this.tts.cancel();
+    this.bilingualPlayback.set(null);
     this.patchSpeech(cardId, { speaking: lang, field, error: null });
     const handle = this.tts.speak(text, {
       lang: lang === 'en' ? 'en-US' : 'es-ES',
@@ -264,6 +336,37 @@ export class LessonDetailPage implements OnInit, OnDestroy {
       return;
     }
     this.patchSpeech(cardId, { speaking: null, field: null });
+  }
+
+  async speakSpanish(text: string, cardId: string): Promise<void> {
+    return this.speak(text, cardId, 'es', null);
+  }
+
+  async speakBilingualForCard(text: string, cardId: string): Promise<void> {
+    if (!text) {
+      return;
+    }
+    this.tts.cancel();
+    this.patchSpeech(cardId, { speaking: null, field: 'bilingual', error: null });
+    const segments = this.segmentsOf(cardId, text);
+    this.bilingualPlayback.set({ cardId, index: 0, total: segments.length });
+    try {
+      await this.tts.speakBilingual(text, {
+        rate: 0.95,
+        onSegment: (_seg, index, total) => {
+          this.bilingualPlayback.set({ cardId, index, total });
+        },
+      });
+    } catch (err: unknown) {
+      this.patchSpeech(cardId, {
+        speaking: null,
+        field: null,
+        error: err instanceof Error ? err.message : 'speech_failed',
+      });
+    } finally {
+      this.bilingualPlayback.set(null);
+      this.patchSpeech(cardId, { speaking: null, field: null });
+    }
   }
 
   async enroll(): Promise<void> {
@@ -309,6 +412,7 @@ export class LessonDetailPage implements OnInit, OnDestroy {
 
   private async load(id: string): Promise<void> {
     this.loading.set(true);
+    this.segmentsCache.clear();
     try {
       const lesson = this.isCatalog()
         ? await this.lessons.getCatalogLesson(id)

@@ -13,6 +13,47 @@ export interface SpeakHandle {
   cancel: () => void;
 }
 
+export interface BilingualSegment {
+  text: string;
+  lang: 'en' | 'es';
+}
+
+export interface SpeakBilingualOptions {
+  rate?: number;
+  onSegment?: (segment: BilingualSegment, index: number, total: number) => void;
+}
+
+const QUOTE_REGEX = /"([^"\n]+)"|'([^'\n]+)'/g;
+
+export function parseBilingual(text: string): BilingualSegment[] {
+  const segments: BilingualSegment[] = [];
+  let lastIndex = 0;
+  for (const match of text.matchAll(QUOTE_REGEX)) {
+    const idx = match.index ?? 0;
+    if (idx > lastIndex) {
+      const chunk = text.slice(lastIndex, idx);
+      if (chunk.trim().length > 0) {
+        segments.push({ text: chunk, lang: 'es' });
+      }
+    }
+    const inner = match[1] ?? match[2] ?? '';
+    if (inner.trim().length > 0) {
+      segments.push({ text: inner, lang: 'en' });
+    }
+    lastIndex = idx + match[0].length;
+  }
+  if (lastIndex < text.length) {
+    const chunk = text.slice(lastIndex);
+    if (chunk.trim().length > 0) {
+      segments.push({ text: chunk, lang: 'es' });
+    }
+  }
+  if (segments.length === 0 && text.trim().length > 0) {
+    segments.push({ text, lang: 'es' });
+  }
+  return segments;
+}
+
 @Injectable({ providedIn: 'root' })
 export class TtsService {
   private get synth(): SpeechSynthesis | null {
@@ -52,6 +93,44 @@ export class TtsService {
       return null;
     }
     synth.cancel();
+    return this.speakRaw(text, options);
+  }
+
+  async speakBilingual(
+    text: string,
+    options: SpeakBilingualOptions = {},
+  ): Promise<void> {
+    const synth = this.synth;
+    if (!synth) {
+      return;
+    }
+    synth.cancel();
+    const segments = parseBilingual(text);
+    const rate = options.rate ?? 0.95;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      options.onSegment?.(seg, i, segments.length);
+      const handle = this.speakRaw(seg.text, {
+        lang: seg.lang === 'en' ? 'en-US' : 'es-ES',
+        rate,
+      });
+      if (!handle) {
+        return;
+      }
+      try {
+        await handle.done;
+      } catch {
+        return;
+      }
+    }
+  }
+
+  cancel(): void {
+    this.synth?.cancel();
+  }
+
+  private speakRaw(text: string, options: SpeakOptions): SpeakHandle {
+    const synth = this.synth!;
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = options.lang ?? 'en-US';
     utterance.rate = options.rate ?? 0.9;
@@ -82,10 +161,6 @@ export class TtsService {
       done,
       cancel: () => synth.cancel(),
     };
-  }
-
-  cancel(): void {
-    this.synth?.cancel();
   }
 
   private waitForVoices(timeoutMs = 1500): Promise<SpeechSynthesisVoice[]> {
