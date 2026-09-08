@@ -5,14 +5,6 @@ import { LessonsService } from '../../core/services/lessons.service';
 import { TtsService } from '../../core/services/tts.service';
 import { Lesson, VocabularyCard } from '../../core/models';
 
-interface CardPlayback {
-  cardId: string;
-  url: string | null;
-  voice: string | null;
-  loading: boolean;
-  error: string | null;
-}
-
 @Component({
   selector: 'app-lesson-detail',
   standalone: true,
@@ -40,6 +32,11 @@ interface CardPlayback {
             Preview from the catalogue. Add it to start tracking your progress.
           </p>
         }
+        @if (!ttsSupported()) {
+          <p class="error">
+            Your browser does not support the Web Speech API. Try Chrome, Edge or Safari.
+          </p>
+        }
       </section>
 
       <section>
@@ -50,9 +47,14 @@ interface CardPlayback {
         @for (c of l.cards; track c.id) {
           <article class="card">
             <div class="row" style="justify-content:space-between;">
-              <strong>{{ c.term }}</strong>
-              <button (click)="speak(c)" [disabled]="isLoading(c.id)">
-                {{ isLoading(c.id) ? 'Playing…' : 'Play TTS' }}
+              <div>
+                <strong>{{ c.term }}</strong>
+                @if (speakingCardId() === c.id) {
+                  <span style="color:#15803d;margin-left:0.5rem;font-size:0.85rem;">● speaking</span>
+                }
+              </div>
+              <button (click)="speak(c)" [disabled]="isLoading(c.id) || !ttsSupported()">
+                {{ isLoading(c.id) ? 'Speaking…' : 'Speak' }}
               </button>
             </div>
             <p style="margin:0.5rem 0 0;">{{ c.definition }}</p>
@@ -62,20 +64,8 @@ interface CardPlayback {
             @if (c.translation) {
               <p style="margin:0.25rem 0 0;color:#64748b;">{{ c.translation }}</p>
             }
-            @if (audioFor(c.id); as pb) {
-              @if (pb.url) {
-                <audio
-                  [attr.data-card-id]="c.id"
-                  [src]="pb.url"
-                  (ended)="onEnded(c.id)"
-                  controls
-                  autoplay
-                  style="display:block;margin-top:0.5rem;width:100%;"
-                ></audio>
-              }
-              @if (pb.error) {
-                <p class="error">{{ pb.error }}</p>
-              }
+            @if (errorFor(c.id); as msg) {
+              <p class="error">{{ msg }}</p>
             }
           </article>
         }
@@ -129,7 +119,9 @@ export class LessonDetailPage implements OnInit, OnDestroy {
   protected readonly adding = signal(false);
   protected readonly enrolling = signal(false);
   protected readonly error = signal<string | null>(null);
-  protected readonly playback = signal<Map<string, CardPlayback>>(new Map());
+  protected readonly speakingCardId = signal<string | null>(null);
+  protected readonly cardErrors = signal<Map<string, string>>(new Map());
+  protected readonly ttsSupported = signal(this.tts.isSupported());
   protected cardDraft = { term: '', definition: '', example: '', translation: '' };
 
   async ngOnInit(): Promise<void> {
@@ -143,19 +135,38 @@ export class LessonDetailPage implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
-    for (const pb of this.playback().values()) {
-      if (pb.url) {
-        this.tts.release(pb.url);
-      }
-    }
-  }
-
-  audioFor(cardId: string): CardPlayback | null {
-    return this.playback().get(cardId) ?? null;
+    this.tts.cancel();
   }
 
   isLoading(cardId: string): boolean {
-    return this.playback().get(cardId)?.loading ?? false;
+    return this.speakingCardId() === cardId;
+  }
+
+  errorFor(cardId: string): string | null {
+    return this.cardErrors().get(cardId) ?? null;
+  }
+
+  async speak(card: VocabularyCard): Promise<void> {
+    if (this.speakingCardId()) {
+      this.tts.cancel();
+    }
+    this.speakingCardId.set(card.id);
+    this.patchError(card.id, null);
+    const handle = this.tts.speak(card.term, { lang: 'en-US', rate: 0.9 });
+    if (!handle) {
+      this.speakingCardId.set(null);
+      this.patchError(card.id, 'speech_synthesis_unavailable');
+      return;
+    }
+    try {
+      await handle.done;
+    } catch (err: unknown) {
+      this.patchError(card.id, err instanceof Error ? err.message : 'speech_failed');
+    } finally {
+      if (this.speakingCardId() === card.id) {
+        this.speakingCardId.set(null);
+      }
+    }
   }
 
   async enroll(): Promise<void> {
@@ -176,33 +187,6 @@ export class LessonDetailPage implements OnInit, OnDestroy {
     } finally {
       this.enrolling.set(false);
     }
-  }
-
-  async speak(card: VocabularyCard): Promise<void> {
-    this.patchPlayback(card.id, { loading: true, error: null });
-    try {
-      const prev = this.playback().get(card.id)?.url;
-      if (prev) {
-        this.tts.release(prev);
-      }
-      const result = await this.tts.synthesize(card.term);
-      this.patchPlayback(card.id, {
-        url: result.url,
-        voice: result.voice,
-        loading: false,
-        error: null,
-      });
-      this.tryAutoplay(card.id);
-    } catch (err: unknown) {
-      this.patchPlayback(card.id, {
-        loading: false,
-        error: err instanceof Error ? err.message : 'tts_failed',
-      });
-    }
-  }
-
-  onEnded(cardId: string): void {
-    this.patchPlayback(cardId, { loading: false });
   }
 
   async onAddCard(event: Event, lessonId: string): Promise<void> {
@@ -239,27 +223,13 @@ export class LessonDetailPage implements OnInit, OnDestroy {
     }
   }
 
-  private tryAutoplay(cardId: string): void {
-    setTimeout(() => {
-      const audio = document.querySelector<HTMLAudioElement>(
-        `audio[data-card-id="${cardId}"]`,
-      );
-      audio?.play().catch(() => {
-        // Autoplay blocked by browser; user can press play in the controls.
-      });
-    }, 0);
-  }
-
-  private patchPlayback(cardId: string, patch: Partial<CardPlayback>): void {
-    const next = new Map(this.playback());
-    const current = next.get(cardId) ?? {
-      cardId,
-      url: null,
-      voice: null,
-      loading: false,
-      error: null,
-    };
-    next.set(cardId, { ...current, ...patch });
-    this.playback.set(next);
+  private patchError(cardId: string, message: string | null): void {
+    const next = new Map(this.cardErrors());
+    if (message === null) {
+      next.delete(cardId);
+    } else {
+      next.set(cardId, message);
+    }
+    this.cardErrors.set(next);
   }
 }

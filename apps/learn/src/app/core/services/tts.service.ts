@@ -1,51 +1,117 @@
-import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
-import { environment } from '../../../environments/environment';
-import { AuthService } from './auth.service';
+import { Injectable } from '@angular/core';
 
-export interface SynthesisResult {
-  url: string;
+export interface SpeakOptions {
+  lang?: string;
+  rate?: number;
+  pitch?: number;
+}
+
+export interface SpeakHandle {
   voice: string;
-  durationMs: number;
-  provider: string;
+  lang: string;
+  done: Promise<void>;
+  cancel: () => void;
 }
 
 @Injectable({ providedIn: 'root' })
 export class TtsService {
-  private readonly http = inject(HttpClient);
-  private readonly auth = inject(AuthService);
+  private get synth(): SpeechSynthesis | null {
+    return typeof window !== 'undefined' && 'speechSynthesis' in window
+      ? window.speechSynthesis
+      : null;
+  }
 
-  async synthesize(text: string): Promise<SynthesisResult> {
-    const token = this.auth.getToken();
-    const res = await fetch(`${environment.apiBaseUrl}/tts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ text }),
-    });
-    if (!res.ok) {
-      throw new Error(`tts_failed_${res.status}`);
+  isSupported(): boolean {
+    return this.synth !== null;
+  }
+
+  listVoices(): SpeechSynthesisVoice[] {
+    return this.synth?.getVoices() ?? [];
+  }
+
+  async pickVoice(lang = 'en'): Promise<SpeechSynthesisVoice | null> {
+    const synth = this.synth;
+    if (!synth) {
+      return null;
     }
-    const voice = res.headers.get('X-TTS-Voice') ?? 'unknown';
-    const durationMs = Number(res.headers.get('X-TTS-Duration-Ms') ?? '0');
-    const provider = res.headers.get('X-TTS-Provider') ?? 'unknown';
-    const blob = await res.blob();
+    let voices = synth.getVoices();
+    if (voices.length === 0) {
+      voices = await this.waitForVoices();
+    }
+    const exact = voices.find((v) => v.lang.toLowerCase().startsWith(lang.toLowerCase()));
+    if (exact) {
+      return exact;
+    }
+    const anyEnglish = voices.find((v) => v.lang.toLowerCase().startsWith('en'));
+    return anyEnglish ?? voices[0] ?? null;
+  }
+
+  speak(text: string, options: SpeakOptions = {}): SpeakHandle | null {
+    const synth = this.synth;
+    if (!synth) {
+      return null;
+    }
+    synth.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = options.lang ?? 'en-US';
+    utterance.rate = options.rate ?? 0.9;
+    utterance.pitch = options.pitch ?? 1;
+    let resolveDone: () => void = () => {};
+    let rejectDone: (reason: Error) => void = () => {};
+    const done = new Promise<void>((resolve, reject) => {
+      resolveDone = resolve;
+      rejectDone = reject;
+    });
+    utterance.onend = () => resolveDone();
+    utterance.onerror = (ev: SpeechSynthesisErrorEvent) => {
+      if (ev.error === 'canceled' || ev.error === 'interrupted') {
+        resolveDone();
+      } else {
+        rejectDone(new Error(`speech_${ev.error}`));
+      }
+    };
+    void this.pickVoice(utterance.lang).then((voice) => {
+      if (voice) {
+        utterance.voice = voice;
+      }
+      synth.speak(utterance);
+    });
     return {
-      url: URL.createObjectURL(blob),
-      voice,
-      durationMs,
-      provider,
+      voice: utterance.voice?.name ?? 'default',
+      lang: utterance.lang,
+      done,
+      cancel: () => synth.cancel(),
     };
   }
 
-  release(url: string): void {
-    URL.revokeObjectURL(url);
+  cancel(): void {
+    this.synth?.cancel();
   }
 
-  ping(): Promise<string> {
-    return firstValueFrom(this.http.get<string>(`${environment.apiBaseUrl.replace(/\/api\/v1$/, '')}/api/v1/health`));
+  private waitForVoices(timeoutMs = 1500): Promise<SpeechSynthesisVoice[]> {
+    return new Promise((resolve) => {
+      const synth = this.synth;
+      if (!synth) {
+        resolve([]);
+        return;
+      }
+      const initial = synth.getVoices();
+      if (initial.length > 0) {
+        resolve(initial);
+        return;
+      }
+      const handler = () => {
+        const v = synth.getVoices();
+        if (v.length > 0) {
+          synth.removeEventListener('voiceschanged', handler);
+          resolve(v);
+        }
+      };
+      synth.addEventListener('voiceschanged', handler);
+      window.setTimeout(() => {
+        synth.removeEventListener('voiceschanged', handler);
+        resolve(synth.getVoices());
+      }, timeoutMs);
+    });
   }
 }
