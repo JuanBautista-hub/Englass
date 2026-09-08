@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { SYSTEM_USER_ID } from '../common/constants';
-import { computeMastery } from '../srs/mastery';
+import { LessonsService } from '../lessons/lessons.service';
+import { LEVEL_ORDER } from '../labels/labels.constants';
 
 export type PathLevelStatus = 'locked' | 'available' | 'in_progress' | 'completed';
 
@@ -24,33 +25,75 @@ export interface LearningPathLevelView {
   lessons: LearningPathLessonView[];
 }
 
-const LEVEL_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const;
+const LEVEL_RANK: Record<string, number> = Object.fromEntries(
+  (LEVEL_ORDER as readonly string[]).map((l, i) => [l, i]),
+);
+
+function computeMaxLevel(
+  completedLevelSlugs: Set<string>,
+  userLessons: Array<{ level: string }>,
+): string {
+  const order = LEVEL_ORDER as readonly string[];
+  let highestIdx = -1;
+  for (let i = 0; i < order.length; i += 1) {
+    if (completedLevelSlugs.has(order[i].toLowerCase())) {
+      highestIdx = i;
+    } else {
+      break;
+    }
+  }
+  for (const l of userLessons) {
+    const idx = order.indexOf(l.level);
+    if (idx > highestIdx) {
+      highestIdx = idx;
+    }
+  }
+  if (highestIdx < 0) {
+    return 'A1';
+  }
+  return order[Math.min(highestIdx + 1, order.length - 1)];
+}
 
 @Injectable()
 export class LearningPathService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly lessons: LessonsService,
+  ) {}
 
   async getLearningPath(userId: string): Promise<LearningPathLevelView[]> {
-    const catalogLevels = await this.prisma.category.findMany();
-    const [catalogLessons, userLessons, userAchievements] = await Promise.all([
-      this.prisma.lesson.findMany({
-        where: { ownerId: SYSTEM_USER_ID },
-        include: { _count: { select: { cards: true } }, category: true },
-        orderBy: [{ level: 'asc' }, { createdAt: 'asc' }],
-      }),
-      this.prisma.lesson.findMany({
-        where: { ownerId: userId, sourceLessonId: { not: null } },
-        include: { cards: { include: { progress: { where: { userId } } } } },
-      }),
-      this.prisma.userAchievement.findMany({
-        where: { userId },
-        include: { achievement: { select: { slug: true } } },
-      }),
-    ]);
+    const catalogLessons = await this.prisma.lesson.findMany({
+      where: { ownerId: SYSTEM_USER_ID },
+      include: { _count: { select: { cards: true } }, category: true },
+      orderBy: [{ level: 'asc' }, { createdAt: 'asc' }],
+    });
 
-    const completedLevelSlugs = new Set(
+    let userLessons = await this.prisma.lesson.findMany({
+      where: { ownerId: userId, sourceLessonId: { not: null } },
+      include: {
+        category: { select: { name: true, slug: true } },
+        cards: { include: { progress: { where: { userId } } } },
+      },
+    });
+
+    const userAchievements = await this.prisma.userAchievement.findMany({
+      where: { userId },
+      include: { achievement: { select: { slug: true } } },
+    });
+    const completedLevels = new Set(
       userAchievements.map((a) => a.achievement.slug.replace('-complete', '')),
     );
+
+    const maxLevel = computeMaxLevel(completedLevels, userLessons);
+
+    await this.lessons.autoEnrollAllForUser(userId, maxLevel);
+    userLessons = await this.prisma.lesson.findMany({
+      where: { ownerId: userId, sourceLessonId: { not: null } },
+      include: {
+        category: { select: { name: true, slug: true } },
+        cards: { include: { progress: { where: { userId } } } },
+      },
+    });
 
     const userByLevel = new Map<string, typeof userLessons>();
     for (const l of userLessons) {
@@ -99,11 +142,8 @@ export class LearningPathService {
         if (top) {
           recommendedLessonId = top.id;
         }
-      } else if (status === 'available' && totalLessons > 0) {
-        const firstCatalog = catalogForLevel[0];
-        if (firstCatalog) {
-          recommendedLessonId = firstCatalog.id;
-        }
+      } else if (status === 'available' && userForLevel.length > 0) {
+        recommendedLessonId = userForLevel[0].id;
       }
 
       result.push({
@@ -114,19 +154,18 @@ export class LearningPathService {
         percent,
         recommendedLessonId,
         status,
-        lessons: catalogForLevel.map((l) => ({
+        lessons: userForLevel.map((l) => ({
           lessonId: l.id,
           title: l.title,
           categoryName: l.category.name,
           categorySlug: l.category.slug,
-          cardCount: l._count.cards,
+          cardCount: l.cards.length,
         })),
       });
 
       lastStatus = status;
     }
 
-    void catalogLevels;
     return result;
   }
 }

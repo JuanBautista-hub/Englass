@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLessonDto } from './dto/create-lesson.dto';
 import { UpdateLessonDto } from './dto/update-lesson.dto';
@@ -6,6 +6,7 @@ import { CreateCardDto } from './dto/create-card.dto';
 import { SYSTEM_USER_ID } from '../common/constants';
 import { initialSrsState } from '../srs/sm2';
 import { computeMastery, type Mastery } from '../srs/mastery';
+import { LEVEL_ORDER, LEVEL_RANK } from '../labels/labels.constants';
 
 export interface CardView {
   id: string;
@@ -83,11 +84,6 @@ export interface OwnedLessonsByLevelGroup {
   lessons: OwnedLessonSummary[];
 }
 
-const LEVEL_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const;
-const LEVEL_RANK: Record<string, number> = Object.fromEntries(
-  LEVEL_ORDER.map((l, i) => [l, i]),
-);
-
 type LessonRow = {
   id: string;
   title: string;
@@ -158,6 +154,7 @@ function toLessonView(row: LessonRow): LessonView {
 
 @Injectable()
 export class LessonsService {
+  private readonly logger = new Logger(LessonsService.name);
   constructor(private readonly prisma: PrismaService) {}
 
   async list(ownerId: string): Promise<LessonView[]> {
@@ -343,6 +340,9 @@ export class LessonsService {
     const eligibleLevels = rank === undefined
       ? LEVEL_ORDER.slice()
       : LEVEL_ORDER.slice(0, rank + 1);
+    this.logger.log(
+      `autoEnrollAllForUser(userId=${userId}, maxLevel=${maxLevel}) eligible=${eligibleLevels.join(',')}`,
+    );
 
     const catalog = await this.prisma.lesson.findMany({
       where: { ownerId: SYSTEM_USER_ID, level: { in: [...eligibleLevels] } },

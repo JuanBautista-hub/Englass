@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { initialSrsState, sm2Next } from './sm2';
 import { computeMastery } from './mastery';
 import type { Rating } from './sm2';
+import { LEVEL_ORDER } from '../labels/labels.constants';
 
 export interface CardProgressView {
   cardId: string;
@@ -23,7 +24,9 @@ export interface ApplyReviewResult {
   userAfter: { currentStreak: number; bestStreak: number };
 }
 
-const LEVEL_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const;
+const LEVEL_RANK_SRS: Record<string, number> = Object.fromEntries(
+  (LEVEL_ORDER as readonly string[]).map((l, i) => [l, i]),
+);
 
 function startOfUtcDay(d: Date): Date {
   const x = new Date(d);
@@ -64,7 +67,7 @@ export class SrsService {
   }
 
   async applyReview(userId: string, cardId: string, rating: Rating): Promise<ApplyReviewResult> {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const current = await tx.cardProgress.findUnique({
         where: { userId_cardId: { userId, cardId } },
       });
@@ -105,14 +108,14 @@ export class SrsService {
         },
       });
       const streak = await this.bumpStreak(tx, userId, now);
-      const newlyAwarded = await this.maybeAwardLevelBadges(tx, userId, updated.cardId);
       return {
         progress: toView(updated),
-        newlyAwarded,
         userBefore: streak.before,
         userAfter: streak.after,
       };
     });
+    const newlyAwarded = await this.maybeAwardLevelBadges(userId, result.progress.cardId);
+    return { ...result, newlyAwarded };
   }
 
   private async bumpStreak(
@@ -152,40 +155,39 @@ export class SrsService {
   }
 
   private async maybeAwardLevelBadges(
-    tx: Prisma.TransactionClient,
     userId: string,
     _justReviewedCardId: string,
   ): Promise<string[]> {
     const awarded: string[] = [];
     for (const level of LEVEL_ORDER) {
       const slug = `${level.toLowerCase()}-complete`;
-      const achievement = await tx.achievement.findUnique({ where: { slug } });
+      const achievement = await this.prisma.achievement.findUnique({ where: { slug } });
       if (!achievement) {
         continue;
       }
-      const existing = await tx.userAchievement.findUnique({
+      const existing = await this.prisma.userAchievement.findUnique({
         where: { userId_achievementId: { userId, achievementId: achievement.id } },
       });
       if (existing) {
         continue;
       }
-      const total = await tx.lesson.count({
+      const total = await this.prisma.lesson.count({
         where: { ownerId: userId, level },
       });
       if (total === 0) {
         continue;
       }
-      const completed = await tx.lesson.count({
+      const completed = await this.prisma.lesson.count({
         where: { ownerId: userId, level, sourceLessonId: { not: null } },
       });
       if (completed < total) {
         continue;
       }
-      const allMastered = await this.allCardsMasteredInLevel(tx, userId, level);
+      const allMastered = await this.allCardsMasteredInLevel(userId, level);
       if (!allMastered) {
         continue;
       }
-      await tx.userAchievement.create({
+      await this.prisma.userAchievement.create({
         data: { userId, achievementId: achievement.id },
       });
       awarded.push(slug);
@@ -194,11 +196,10 @@ export class SrsService {
   }
 
   private async allCardsMasteredInLevel(
-    tx: Prisma.TransactionClient,
     userId: string,
     level: string,
   ): Promise<boolean> {
-    const lessons = await tx.lesson.findMany({
+    const lessons = await this.prisma.lesson.findMany({
       where: { ownerId: userId, level, sourceLessonId: { not: null } },
       select: { id: true },
     });
@@ -206,7 +207,7 @@ export class SrsService {
       return false;
     }
     const lessonIds = lessons.map((l) => l.id);
-    const cards = await tx.vocabularyCard.findMany({
+    const cards = await this.prisma.vocabularyCard.findMany({
       where: { lessonId: { in: lessonIds } },
       select: { id: true },
     });
@@ -214,7 +215,7 @@ export class SrsService {
       return false;
     }
     const cardIds = cards.map((c) => c.id);
-    const progress = await tx.cardProgress.findMany({
+    const progress = await this.prisma.cardProgress.findMany({
       where: { userId, cardId: { in: cardIds } },
     });
     if (progress.length !== cardIds.length) {

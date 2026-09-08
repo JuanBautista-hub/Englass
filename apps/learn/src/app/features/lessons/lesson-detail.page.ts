@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { UpperCasePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { LessonsService } from '../../core/services/lessons.service';
+import { MasteryLabelsService } from '../../core/services/mastery-labels.service';
 import {
   BilingualSegment,
   parseBilingual,
@@ -242,6 +243,7 @@ export class LessonDetailPage implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly lessons = inject(LessonsService);
+  private readonly masteryLabels = inject(MasteryLabelsService);
   private readonly tts = inject(TtsService);
 
   protected readonly lesson = signal<Lesson | null>(null);
@@ -276,15 +278,11 @@ export class LessonDetailPage implements OnInit, OnDestroy {
   }
 
   masteryLabel(m: Mastery): string {
-    if (m === 'mastered') return 'Mastered';
-    if (m === 'reviewing') return 'Reviewing';
-    return 'Learning';
+    return this.masteryLabels.forKey(m)?.label ?? '';
   }
 
   masteryClass(m: Mastery): string {
-    if (m === 'mastered') return 'bg-emerald-100 text-emerald-800';
-    if (m === 'reviewing') return 'bg-amber-100 text-amber-800';
-    return 'bg-slate-100 text-slate-700';
+    return this.masteryLabels.forKey(m)?.badgeClass ?? '';
   }
 
   isSpeaking(cardId: string): boolean {

@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DueCard, Rating, ReviewService } from '../../core/services/review.service';
+import { MasteryLabelsService } from '../../core/services/mastery-labels.service';
 import {
   BilingualSegment,
   parseBilingual,
@@ -225,6 +226,7 @@ interface SessionSummary {
 export class StudyPage implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly review = inject(ReviewService);
+  private readonly masteryLabels = inject(MasteryLabelsService);
   private readonly tts = inject(TtsService);
 
   protected readonly loading = signal(true);
@@ -338,15 +340,11 @@ export class StudyPage implements OnInit {
   }
 
   masteryLabel(m: DueCard['mastery']): string {
-    if (m === 'mastered') return 'Mastered';
-    if (m === 'reviewing') return 'Reviewing';
-    return 'Learning';
+    return this.masteryLabels.forKey(m)?.label ?? '';
   }
 
   masteryClass(m: DueCard['mastery']): string {
-    if (m === 'mastered') return 'bg-emerald-100 text-emerald-800';
-    if (m === 'reviewing') return 'bg-amber-100 text-amber-800';
-    return 'bg-slate-100 text-slate-700';
+    return this.masteryLabels.forKey(m)?.badgeClass ?? '';
   }
 
   ratingEmoji(rating: string): string {

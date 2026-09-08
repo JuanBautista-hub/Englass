@@ -11,6 +11,7 @@ import { ReviewModule } from './review/review.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { LearningPathModule } from './learning-path/learning-path.module';
 import { AchievementsModule } from './achievements/achievements.module';
+import { LabelsModule } from './labels/labels.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -27,6 +28,7 @@ import { HealthController } from './health/health.controller';
     DashboardModule,
     LearningPathModule,
     AchievementsModule,
+    LabelsModule,
   ],
   controllers: [HealthController],
 })
