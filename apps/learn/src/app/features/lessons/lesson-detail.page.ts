@@ -167,7 +167,10 @@ export class LessonDetailPage implements OnInit, OnDestroy {
     this.error.set(null);
     try {
       const cloned = await this.lessons.enrollInCatalog(l.id);
-      await this.router.navigate(['/lessons', cloned.id]);
+      const isNew = cloned.id !== l.id && cloned.sourceLessonId === l.id;
+      await this.router.navigate(['/lessons', cloned.id], {
+        queryParams: isNew ? {} : { source: 'catalog' },
+      });
     } catch (err: unknown) {
       this.error.set(err instanceof Error ? err.message : 'enroll_failed');
     } finally {

@@ -1,6 +1,6 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { LessonsService } from '../../core/services/lessons.service';
 import { CatalogCategoryGroup, CatalogLessonSummary, Lesson } from '../../core/models';
 
@@ -43,22 +43,29 @@ import { CatalogCategoryGroup, CatalogLessonSummary, Lesson } from '../../core/m
                   <strong>{{ lesson.title }}</strong>
                   <span style="color:#64748b;margin-left:0.4rem;font-size:0.85rem;">[{{ lesson.level }}]</span>
                   <span style="color:#64748b;margin-left:0.4rem;font-size:0.85rem;">{{ lesson.cardCount }} cards</span>
+                  @if (isEnrolled(lesson.id)) {
+                    <span style="color:#15803d;margin-left:0.4rem;font-size:0.85rem;">✓ Added</span>
+                  }
                 </div>
                 @if (lesson.description) {
                   <div style="color:#475569;font-size:0.9rem;">{{ lesson.description }}</div>
                 }
               </div>
               <div class="row">
-                <a [routerLink]="['/lessons', catalogRouteId(lesson)]" [queryParams]="{ source: 'catalog' }">
+                <a [routerLink]="['/lessons', lesson.id]" [queryParams]="{ source: 'catalog' }">
                   Preview
                 </a>
-                <button
-                  class="primary"
-                  (click)="enroll(lesson)"
-                  [disabled]="isEnrolling(lesson.id)"
-                >
-                  {{ isEnrolling(lesson.id) ? 'Adding…' : '+ Add to my lessons' }}
-                </button>
+                @if (isEnrolled(lesson.id)) {
+                  <a [routerLink]="['/lessons', enrolledLessonId(lesson.id)]">Open</a>
+                } @else {
+                  <button
+                    class="primary"
+                    (click)="enroll(lesson)"
+                    [disabled]="isEnrolling(lesson.id)"
+                  >
+                    {{ isEnrolling(lesson.id) ? 'Adding…' : '+ Add to my lessons' }}
+                  </button>
+                }
               </div>
             </div>
           }
@@ -135,11 +142,14 @@ import { CatalogCategoryGroup, CatalogLessonSummary, Lesson } from '../../core/m
 })
 export class LessonsPage implements OnInit {
   private readonly svc = inject(LessonsService);
+  private readonly router = inject(Router);
 
   protected readonly catalog = signal<CatalogCategoryGroup[]>([]);
   protected readonly catalogLoading = signal(true);
   protected readonly catalogError = signal<string | null>(null);
   protected readonly enrolling = signal<Set<string>>(new Set());
+  protected readonly enrolledSourceIds = signal<Set<string>>(new Set());
+  protected readonly enrolledBySource = signal<Map<string, string>>(new Map());
   protected readonly lessons = signal<Lesson[]>([]);
   protected readonly lessonsLoading = signal(true);
   protected readonly creating = signal(false);
@@ -157,23 +167,28 @@ export class LessonsPage implements OnInit {
     this.createError.set(null);
   }
 
-  catalogRouteId(lesson: CatalogLessonSummary): string {
-    return lesson.id;
-  }
-
   isEnrolling(id: string): boolean {
     return this.enrolling().has(id);
   }
 
+  isEnrolled(catalogLessonId: string): boolean {
+    return this.enrolledSourceIds().has(catalogLessonId);
+  }
+
+  enrolledLessonId(catalogLessonId: string): string | null {
+    return this.enrolledBySource().get(catalogLessonId) ?? null;
+  }
+
   async enroll(lesson: CatalogLessonSummary): Promise<void> {
-    if (this.enrolling().has(lesson.id)) {
+    if (this.enrolling().has(lesson.id) || this.isEnrolled(lesson.id)) {
       return;
     }
     this.markEnrolling(lesson.id, true);
     this.catalogError.set(null);
     try {
-      await this.svc.enrollInCatalog(lesson.id);
-      await this.loadMyLessons();
+      const cloned = await this.svc.enrollInCatalog(lesson.id);
+      this.markEnrolled(cloned.sourceLessonId, cloned.id);
+      await this.router.navigate(['/lessons', cloned.id]);
     } catch (err: unknown) {
       this.catalogError.set(err instanceof Error ? err.message : 'enroll_failed');
     } finally {
@@ -216,7 +231,18 @@ export class LessonsPage implements OnInit {
   private async loadMyLessons(): Promise<void> {
     this.lessonsLoading.set(true);
     try {
-      this.lessons.set(await this.svc.list());
+      const rows = await this.svc.list();
+      this.lessons.set(rows);
+      const sourceIds = new Set<string>();
+      const map = new Map<string, string>();
+      for (const l of rows) {
+        if (l.sourceLessonId) {
+          sourceIds.add(l.sourceLessonId);
+          map.set(l.sourceLessonId, l.id);
+        }
+      }
+      this.enrolledSourceIds.set(sourceIds);
+      this.enrolledBySource.set(map);
     } catch {
       // existing behaviour: silent load failure for personal lessons
     } finally {
@@ -232,5 +258,17 @@ export class LessonsPage implements OnInit {
       next.delete(id);
     }
     this.enrolling.set(next);
+  }
+
+  private markEnrolled(sourceId: string | null, personalLessonId: string): void {
+    if (!sourceId) {
+      return;
+    }
+    const sourceIds = new Set(this.enrolledSourceIds());
+    sourceIds.add(sourceId);
+    this.enrolledSourceIds.set(sourceIds);
+    const map = new Map(this.enrolledBySource());
+    map.set(sourceId, personalLessonId);
+    this.enrolledBySource.set(map);
   }
 }

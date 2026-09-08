@@ -24,6 +24,7 @@ export interface LessonView {
   level: string;
   categoryId: string;
   ownerId: string;
+  sourceLessonId: string | null;
   cards: CardView[];
   createdAt: string;
   updatedAt: string;
@@ -52,6 +53,7 @@ type LessonRow = {
   level: string;
   categoryId: string;
   ownerId: string;
+  sourceLessonId: string | null;
   createdAt: Date;
   updatedAt: Date;
   cards?: CardRow[];
@@ -89,6 +91,7 @@ function toLessonView(row: LessonRow): LessonView {
     level: row.level,
     categoryId: row.categoryId,
     ownerId: row.ownerId,
+    sourceLessonId: row.sourceLessonId,
     cards: (row.cards ?? []).map(toCardView),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -231,6 +234,16 @@ export class LessonsService {
       }));
   }
 
+  async listEnrolledSourceIds(userId: string): Promise<string[]> {
+    const rows = await this.prisma.lesson.findMany({
+      where: { ownerId: userId, sourceLessonId: { not: null } },
+      select: { sourceLessonId: true },
+    });
+    return rows
+      .map((r) => r.sourceLessonId)
+      .filter((s): s is string => s !== null);
+  }
+
   async enrollInCatalog(userId: string, sourceLessonId: string): Promise<LessonView> {
     const source = await this.prisma.lesson.findUnique({
       where: { id: sourceLessonId },
@@ -242,6 +255,13 @@ export class LessonsService {
     if (source.ownerId !== SYSTEM_USER_ID) {
       throw new ForbiddenException('not_a_catalog_lesson');
     }
+    const existing = await this.prisma.lesson.findFirst({
+      where: { ownerId: userId, sourceLessonId },
+      include: { cards: { orderBy: { ordinal: 'asc' } } },
+    });
+    if (existing) {
+      return toLessonView(existing);
+    }
     const clone = await this.prisma.lesson.create({
       data: {
         ownerId: userId,
@@ -249,6 +269,7 @@ export class LessonsService {
         description: source.description,
         level: source.level,
         categoryId: source.categoryId,
+        sourceLessonId,
       },
     });
     let ordinal = 0;

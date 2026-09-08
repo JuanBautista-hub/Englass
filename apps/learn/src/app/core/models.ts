@@ -35,6 +35,7 @@ export interface Lesson {
   level: string;
   categoryId: string;
   ownerId: string;
+  sourceLessonId: string | null;
   cards: VocabularyCard[];
   createdAt: string;
   updatedAt: string;

@@ -45,18 +45,20 @@ model Category {
 }
 
 model Lesson {
-  id          String           @id @default(cuid())
-  title       String
-  description String?
-  level       String           @default("A1")
-  categoryId  String           @map("category_id")
-  category    Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
-  ownerId     String           @map("owner_id")
-  owner       User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  cards       VocabularyCard[]
-  createdAt   DateTime         @default(now()) @map("created_at")
-  updatedAt   DateTime         @updatedAt @map("updated_at")
+  id             String           @id @default(cuid())
+  title          String
+  description    String?
+  level          String           @default("A1")
+  categoryId     String           @map("category_id")
+  category       Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  ownerId        String           @map("owner_id")
+  owner          User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  sourceLessonId String?          @map("source_lesson_id")
+  cards          VocabularyCard[]
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
 
+  @@unique([ownerId, sourceLessonId])
   @@index([ownerId])
   @@index([categoryId])
   @@map("lessons")
