@@ -8,6 +8,7 @@ Thumbs.db
 .env
 .env.local
 apps/learn/src/environments/environment.local.ts
+apps/web/src/environments/environment.local.ts
 apps/web/src/assets/fixtures/*.pdf
 packages/canvas-stub/index.cjs.bak
 .vscode/

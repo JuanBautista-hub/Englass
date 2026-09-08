@@ -4,6 +4,9 @@
   "private": true,
   "description": "Engclass Angular frontend (apps/web).",
   "scripts": {
+    "sync-env": "tsx scripts/sync-env.ts",
+    "prebuild": "pnpm sync-env",
+    "prestart": "pnpm sync-env",
     "fixtures:build": "tsx scripts/build-fixture.ts",
     "start": "ng serve --port 4200",
     "build": "ng build",
@@ -45,6 +48,7 @@
     "@typescript-eslint/eslint-plugin": "7.18.0",
     "@typescript-eslint/parser": "7.18.0",
     "autoprefixer": "10.4.20",
+    "dotenv": "16.4.5",
     "eslint": "8.57.0",
     "eslint-config-prettier": "9.1.0",
     "jest": "29.7.0",

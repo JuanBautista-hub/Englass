@@ -1,6 +1,1 @@
-export const environment = {
-  production: true,
-  apiBaseUrl: '/api/v1',
-  useMockApi: false,
-  cookieDomain: '',
-};
+export { environment } from './environment.local';

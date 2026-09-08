@@ -250,6 +250,9 @@ importers:
       autoprefixer:
         specifier: 10.4.20
         version: 10.4.20(postcss@8.4.47)
+      dotenv:
+        specifier: 16.4.5
+        version: 16.4.5
       eslint:
         specifier: 8.57.0
         version: 8.57.0
@@ -10158,7 +10161,7 @@ snapshots:
 
   dotenv-expand@11.0.7:
     dependencies:
-      dotenv: 16.4.7
+      dotenv: 16.4.5
 
   dotenv@16.4.5: {}
 
@@ -12315,7 +12318,7 @@ snapshots:
       cli-cursor: 3.1.0
       cli-spinners: 2.6.1
       cliui: 8.0.1
-      dotenv: 16.4.7
+      dotenv: 16.4.5
       dotenv-expand: 11.0.7
       enquirer: 2.3.6
       figures: 3.2.0
