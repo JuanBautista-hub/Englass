@@ -30,6 +30,11 @@ export class LessonsController {
     return this.lessons.listCatalog();
   }
 
+  @Get('catalog/by-level')
+  catalogByLevel() {
+    return this.lessons.listCatalogByLevel();
+  }
+
   @Get('catalog/:id')
   catalogLesson(@Param('id') id: string) {
     return this.lessons.findOneAsCatalog(id);

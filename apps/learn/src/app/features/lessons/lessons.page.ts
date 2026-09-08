@@ -3,7 +3,15 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { LessonsService } from '../../core/services/lessons.service';
 import { ReviewService } from '../../core/services/review.service';
-import { CatalogCategoryGroup, CatalogLessonSummary, Lesson } from '../../core/models';
+import {
+  CatalogCategoryGroup,
+  CatalogLevelGroup,
+  CatalogLevelLesson,
+  CatalogLessonSummary,
+  Lesson,
+} from '../../core/models';
+
+type CatalogView = 'level' | 'category';
 
 @Component({
   selector: 'app-lessons',
@@ -31,64 +39,137 @@ import { CatalogCategoryGroup, CatalogLessonSummary, Lesson } from '../../core/m
     <section>
       <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
         <h2 style="margin:0;">Catalogue</h2>
-        <button class="primary" (click)="toggleCreate()">
-          {{ creating() ? 'Cancel' : '+ New lesson' }}
-        </button>
+        <div class="row">
+          <div role="tablist" style="display:inline-flex;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;">
+            <button
+              type="button"
+              role="tab"
+              [attr.aria-selected]="catalogView() === 'level'"
+              (click)="setCatalogView('level')"
+              [style.background]="catalogView() === 'level' ? '#1f2937' : '#fff'"
+              [style.color]="catalogView() === 'level' ? '#fff' : '#0f172a'"
+              style="border:0;padding:0.4rem 0.8rem;cursor:pointer;"
+            >
+              Por nivel
+            </button>
+            <button
+              type="button"
+              role="tab"
+              [attr.aria-selected]="catalogView() === 'category'"
+              (click)="setCatalogView('category')"
+              [style.background]="catalogView() === 'category' ? '#1f2937' : '#fff'"
+              [style.color]="catalogView() === 'category' ? '#fff' : '#0f172a'"
+              style="border:0;padding:0.4rem 0.8rem;cursor:pointer;border-left:1px solid #cbd5e1;"
+            >
+              Por categoría
+            </button>
+          </div>
+          <button class="primary" (click)="toggleCreate()">
+            {{ creating() ? 'Cancel' : '+ New lesson' }}
+          </button>
+        </div>
       </header>
-      <p style="color:#475569;margin-top:0;">
-        Pre-built lessons grouped by topic. Tap a lesson to study or to add it to your list.
-      </p>
 
       @if (catalogError()) {
         <p class="error">{{ catalogError() }}</p>
       }
 
-      @if (catalog().length === 0 && !catalogLoading()) {
-        <p>No catalogue available yet.</p>
-      }
-
-      @for (group of catalog(); track group.id) {
-        <article class="card">
-          <header style="display:flex;justify-content:space-between;align-items:center;">
-            <h3 style="margin:0;">{{ group.name }}</h3>
-            <span style="color:#64748b;font-size:0.85rem;">{{ group.lessons.length }} lesson(s)</span>
-          </header>
-          @for (lesson of group.lessons; track lesson.id) {
-            <div
-              style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0;border-top:1px solid #e2e8f0;margin-top:0.5rem;"
-            >
-              <div style="flex:1;">
-                <div>
-                  <strong>{{ lesson.title }}</strong>
-                  <span style="color:#64748b;margin-left:0.4rem;font-size:0.85rem;">[{{ lesson.level }}]</span>
-                  <span style="color:#64748b;margin-left:0.4rem;font-size:0.85rem;">{{ lesson.cardCount }} cards</span>
-                  @if (isEnrolled(lesson.id)) {
-                    <span style="color:#15803d;margin-left:0.4rem;font-size:0.85rem;">✓ Added</span>
+      @if (catalogView() === 'level') {
+        @if (byLevel().length === 0 && !catalogLoading()) {
+          <p>No catalogue available yet.</p>
+        }
+        @for (group of byLevel(); track group.level) {
+          <article class="card">
+            <header style="display:flex;justify-content:space-between;align-items:center;">
+              <h3 style="margin:0;">{{ levelLabel(group.level) }}</h3>
+              <span style="color:#64748b;font-size:0.85rem;">{{ group.lessons.length }} lesson(es)</span>
+            </header>
+            @for (lesson of group.lessons; track lesson.id) {
+              <div
+                style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0;border-top:1px solid #e2e8f0;margin-top:0.5rem;"
+              >
+                <div style="flex:1;">
+                  <div>
+                    <strong>{{ lesson.title }}</strong>
+                    <span style="color:#1f2937;background:#e2e8f0;margin-left:0.4rem;padding:0.05rem 0.4rem;border-radius:4px;font-size:0.75rem;">
+                      {{ lesson.categoryName }}
+                    </span>
+                    <span style="color:#64748b;margin-left:0.4rem;font-size:0.85rem;">{{ lesson.cardCount }} cards</span>
+                    @if (isEnrolled(lesson.id)) {
+                      <span style="color:#15803d;margin-left:0.4rem;font-size:0.85rem;">✓ Added</span>
+                    }
+                  </div>
+                  @if (lesson.description) {
+                    <div style="color:#475569;font-size:0.9rem;">{{ lesson.description }}</div>
                   }
                 </div>
-                @if (lesson.description) {
-                  <div style="color:#475569;font-size:0.9rem;">{{ lesson.description }}</div>
-                }
+                <div class="row">
+                  <a [routerLink]="['/lessons', lesson.id]" [queryParams]="{ source: 'catalog' }">
+                    Preview
+                  </a>
+                  @if (isEnrolled(lesson.id)) {
+                    <a [routerLink]="['/lessons', enrolledLessonId(lesson.id)]">Open</a>
+                  } @else {
+                    <button
+                      class="primary"
+                      (click)="enrollById(lesson)"
+                      [disabled]="isEnrolling(lesson.id)"
+                    >
+                      {{ isEnrolling(lesson.id) ? 'Adding…' : '+ Add' }}
+                    </button>
+                  }
+                </div>
               </div>
-              <div class="row">
-                <a [routerLink]="['/lessons', lesson.id]" [queryParams]="{ source: 'catalog' }">
-                  Preview
-                </a>
-                @if (isEnrolled(lesson.id)) {
-                  <a [routerLink]="['/lessons', enrolledLessonId(lesson.id)]">Open</a>
-                } @else {
-                  <button
-                    class="primary"
-                    (click)="enroll(lesson)"
-                    [disabled]="isEnrolling(lesson.id)"
-                  >
-                    {{ isEnrolling(lesson.id) ? 'Adding…' : '+ Add to my lessons' }}
-                  </button>
-                }
+            }
+          </article>
+        }
+      } @else {
+        @if (catalog().length === 0 && !catalogLoading()) {
+          <p>No catalogue available yet.</p>
+        }
+        @for (group of catalog(); track group.id) {
+          <article class="card">
+            <header style="display:flex;justify-content:space-between;align-items:center;">
+              <h3 style="margin:0;">{{ group.name }}</h3>
+              <span style="color:#64748b;font-size:0.85rem;">{{ group.lessons.length }} lesson(s)</span>
+            </header>
+            @for (lesson of group.lessons; track lesson.id) {
+              <div
+                style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0;border-top:1px solid #e2e8f0;margin-top:0.5rem;"
+              >
+                <div style="flex:1;">
+                  <div>
+                    <strong>{{ lesson.title }}</strong>
+                    <span style="color:#64748b;margin-left:0.4rem;font-size:0.85rem;">[{{ lesson.level }}]</span>
+                    <span style="color:#64748b;margin-left:0.4rem;font-size:0.85rem;">{{ lesson.cardCount }} cards</span>
+                    @if (isEnrolled(lesson.id)) {
+                      <span style="color:#15803d;margin-left:0.4rem;font-size:0.85rem;">✓ Added</span>
+                    }
+                  </div>
+                  @if (lesson.description) {
+                    <div style="color:#475569;font-size:0.9rem;">{{ lesson.description }}</div>
+                  }
+                </div>
+                <div class="row">
+                  <a [routerLink]="['/lessons', lesson.id]" [queryParams]="{ source: 'catalog' }">
+                    Preview
+                  </a>
+                  @if (isEnrolled(lesson.id)) {
+                    <a [routerLink]="['/lessons', enrolledLessonId(lesson.id)]">Open</a>
+                  } @else {
+                    <button
+                      class="primary"
+                      (click)="enroll(lesson)"
+                      [disabled]="isEnrolling(lesson.id)"
+                    >
+                      {{ isEnrolling(lesson.id) ? 'Adding…' : '+ Add to my lessons' }}
+                    </button>
+                  }
+                </div>
               </div>
-            </div>
-          }
-        </article>
+            }
+          </article>
+        }
       }
     </section>
 
@@ -168,6 +249,8 @@ export class LessonsPage implements OnInit {
   private readonly router = inject(Router);
 
   protected readonly catalog = signal<CatalogCategoryGroup[]>([]);
+  protected readonly byLevel = signal<CatalogLevelGroup[]>([]);
+  protected readonly catalogView = signal<CatalogView>('level');
   protected readonly catalogLoading = signal(true);
   protected readonly catalogError = signal<string | null>(null);
   protected readonly enrolling = signal<Set<string>>(new Set());
@@ -184,6 +267,10 @@ export class LessonsPage implements OnInit {
 
   async ngOnInit(): Promise<void> {
     await Promise.all([this.loadCatalog(), this.loadMyLessons(), this.loadStats()]);
+  }
+
+  setCatalogView(view: CatalogView): void {
+    this.catalogView.set(view);
   }
 
   toggleCreate(): void {
@@ -203,7 +290,36 @@ export class LessonsPage implements OnInit {
     return this.enrolledBySource().get(catalogLessonId) ?? null;
   }
 
+  levelLabel(level: string): string {
+    const map: Record<string, string> = {
+      A1: 'A1 · Beginner',
+      A2: 'A2 · Elementary',
+      B1: 'B1 · Intermediate',
+      B2: 'B2 · Upper Intermediate',
+      C1: 'C1 · Advanced',
+      C2: 'C2 · Proficiency',
+    };
+    return map[level] ?? level;
+  }
+
   async enroll(lesson: CatalogLessonSummary): Promise<void> {
+    if (this.enrolling().has(lesson.id) || this.isEnrolled(lesson.id)) {
+      return;
+    }
+    this.markEnrolling(lesson.id, true);
+    this.catalogError.set(null);
+    try {
+      const cloned = await this.svc.enrollInCatalog(lesson.id);
+      this.markEnrolled(cloned.sourceLessonId, cloned.id);
+      await this.router.navigate(['/lessons', cloned.id]);
+    } catch (err: unknown) {
+      this.catalogError.set(err instanceof Error ? err.message : 'enroll_failed');
+    } finally {
+      this.markEnrolling(lesson.id, false);
+    }
+  }
+
+  async enrollById(lesson: CatalogLevelLesson): Promise<void> {
     if (this.enrolling().has(lesson.id) || this.isEnrolled(lesson.id)) {
       return;
     }
@@ -256,7 +372,12 @@ export class LessonsPage implements OnInit {
   private async loadCatalog(): Promise<void> {
     this.catalogLoading.set(true);
     try {
-      this.catalog.set(await this.svc.listCatalog());
+      const [byCategory, byLevel] = await Promise.all([
+        this.svc.listCatalog(),
+        this.svc.listCatalogByLevel(),
+      ]);
+      this.catalog.set(byCategory);
+      this.byLevel.set(byLevel);
     } catch (err: unknown) {
       this.catalogError.set(err instanceof Error ? err.message : 'catalog_load_failed');
     } finally {

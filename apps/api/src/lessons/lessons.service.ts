@@ -47,6 +47,28 @@ export interface CatalogCategoryGroup {
   lessons: CatalogLessonSummary[];
 }
 
+export interface CatalogLevelLesson {
+  id: string;
+  title: string;
+  description: string | null;
+  cardCount: number;
+  categoryId: string;
+  categoryName: string;
+  categorySlug: string;
+  level: string;
+}
+
+export interface CatalogLevelGroup {
+  level: string;
+  order: number;
+  lessons: CatalogLevelLesson[];
+}
+
+const LEVEL_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const;
+const LEVEL_RANK: Record<string, number> = Object.fromEntries(
+  LEVEL_ORDER.map((l, i) => [l, i]),
+);
+
 type LessonRow = {
   id: string;
   title: string;
@@ -235,6 +257,43 @@ export class LessonsService {
         name: c.name,
         iconKey: c.iconKey,
         lessons: byCategory.get(c.id) ?? [],
+      }));
+  }
+
+  async listCatalogByLevel(): Promise<CatalogLevelGroup[]> {
+    const lessons = await this.prisma.lesson.findMany({
+      where: { ownerId: SYSTEM_USER_ID },
+      include: {
+        _count: { select: { cards: true } },
+        category: { select: { id: true, name: true, slug: true } },
+      },
+      orderBy: [{ level: 'asc' }, { createdAt: 'asc' }],
+    });
+    const byLevel = new Map<string, CatalogLevelLesson[]>();
+    for (const l of lessons) {
+      const list = byLevel.get(l.level) ?? [];
+      list.push({
+        id: l.id,
+        title: l.title,
+        description: l.description,
+        cardCount: l._count.cards,
+        categoryId: l.category.id,
+        categoryName: l.category.name,
+        categorySlug: l.category.slug,
+        level: l.level,
+      });
+      byLevel.set(l.level, list);
+    }
+    return Array.from(byLevel.entries())
+      .sort((a, b) => {
+        const ra = LEVEL_RANK[a[0]] ?? 999;
+        const rb = LEVEL_RANK[b[0]] ?? 999;
+        return ra - rb;
+      })
+      .map(([level, items]) => ({
+        level,
+        order: LEVEL_RANK[level] ?? 999,
+        lessons: items,
       }));
   }
 

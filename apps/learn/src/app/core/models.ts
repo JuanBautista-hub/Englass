@@ -57,3 +57,20 @@ export interface CatalogCategoryGroup {
   iconKey: string | null;
   lessons: CatalogLessonSummary[];
 }
+
+export interface CatalogLevelLesson {
+  id: string;
+  title: string;
+  description: string | null;
+  cardCount: number;
+  categoryId: string;
+  categoryName: string;
+  categorySlug: string;
+  level: string;
+}
+
+export interface CatalogLevelGroup {
+  level: string;
+  order: number;
+  lessons: CatalogLevelLesson[];
+}
