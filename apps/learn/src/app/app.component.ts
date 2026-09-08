@@ -7,15 +7,19 @@ import { AuthService } from './core/services/auth.service';
   standalone: true,
   imports: [RouterOutlet, RouterLink],
   template: `
-    <header style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem 1rem;background:#1f2937;color:#fff;">
-      <a routerLink="/lessons" style="color:#fff;text-decoration:none;font-weight:600;">Engclass Learn</a>
+    <header class="flex items-center justify-between bg-slate-900 text-white px-4 py-3">
+      <a routerLink="/lessons" class="text-white font-semibold no-underline">Engclass Learn</a>
       @if (auth.isAuthenticated()) {
-        <button class="primary" (click)="logout()" style="background:#fff;color:#1f2937;border-color:#fff;">Logout</button>
+        <button
+          type="button"
+          class="bg-white text-slate-900 px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-100"
+          (click)="logout()"
+        >Logout</button>
       } @else {
-        <a routerLink="/login" style="color:#fff;">Login</a>
+        <a routerLink="/login" class="text-white">Login</a>
       }
     </header>
-    <main>
+    <main class="max-w-3xl mx-auto px-4 py-4">
       <router-outlet />
     </main>
   `,

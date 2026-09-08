@@ -19,104 +19,104 @@ type CatalogView = 'level' | 'category';
   imports: [FormsModule, RouterLink],
   template: `
     @if (stats(); as s) {
-      <section class="card" style="background:#f1f5f9;">
-        <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+      <section class="bg-slate-100 border border-slate-200 rounded-lg p-4 mb-4">
+        <div class="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <div style="font-size:1.5rem;font-weight:600;">{{ s.dueNow }} due now</div>
-            <div style="color:#475569;font-size:0.85rem;">
+            <div class="text-2xl font-semibold text-slate-900">{{ s.dueNow }} due now</div>
+            <div class="text-slate-600 text-sm">
               {{ s.dueToday }} due today · {{ s.learned }} learned · avg ease {{ s.averageEase }}
             </div>
           </div>
           @if (s.dueNow > 0) {
-            <a class="primary" routerLink="/lessons" style="text-decoration:none;padding:0.5rem 0.9rem;background:#1f2937;color:#fff;border-radius:6px;" (click)="reviewFirstDue($event)">
-              Start review
-            </a>
+            <a
+              routerLink="/lessons"
+              class="no-underline px-3 py-1.5 bg-slate-900 text-white rounded-md text-sm font-medium hover:bg-slate-700"
+              (click)="reviewFirstDue($event)"
+            >Start review</a>
           }
         </div>
       </section>
     }
 
-    <section>
-      <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-        <h2 style="margin:0;">Catalogue</h2>
-        <div class="row">
-          <div role="tablist" style="display:inline-flex;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;">
+    <section class="mb-6">
+      <header class="flex items-center justify-between mb-3 gap-3 flex-wrap">
+        <h2 class="text-lg font-semibold text-slate-900 m-0">Catalogue</h2>
+        <div class="flex items-center gap-2 flex-wrap">
+          <div role="tablist" class="inline-flex border border-slate-300 rounded-md overflow-hidden">
             <button
               type="button"
               role="tab"
               [attr.aria-selected]="catalogView() === 'level'"
               (click)="setCatalogView('level')"
-              [style.background]="catalogView() === 'level' ? '#1f2937' : '#fff'"
-              [style.color]="catalogView() === 'level' ? '#fff' : '#0f172a'"
-              style="border:0;padding:0.4rem 0.8rem;cursor:pointer;"
-            >
-              Por nivel
-            </button>
+              [class]="catalogView() === 'level' ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'"
+              class="border-0 px-3 py-1.5 cursor-pointer text-sm"
+            >Por nivel</button>
             <button
               type="button"
               role="tab"
               [attr.aria-selected]="catalogView() === 'category'"
               (click)="setCatalogView('category')"
-              [style.background]="catalogView() === 'category' ? '#1f2937' : '#fff'"
-              [style.color]="catalogView() === 'category' ? '#fff' : '#0f172a'"
-              style="border:0;padding:0.4rem 0.8rem;cursor:pointer;border-left:1px solid #cbd5e1;"
-            >
-              Por categoría
-            </button>
+              [class]="catalogView() === 'category' ? 'bg-slate-900 text-white' : 'bg-white text-slate-900'"
+              class="border-0 border-l border-slate-300 px-3 py-1.5 cursor-pointer text-sm"
+            >Por categoría</button>
           </div>
-          <button class="primary" (click)="toggleCreate()">
-            {{ creating() ? 'Cancel' : '+ New lesson' }}
-          </button>
+          <button
+            type="button"
+            class="bg-slate-900 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-700"
+            (click)="toggleCreate()"
+          >{{ creating() ? 'Cancel' : '+ New lesson' }}</button>
         </div>
       </header>
 
       @if (catalogError()) {
-        <p class="error">{{ catalogError() }}</p>
+        <p class="text-error mb-2">{{ catalogError() }}</p>
       }
 
       @if (catalogView() === 'level') {
         @if (byLevel().length === 0 && !catalogLoading()) {
-          <p>No catalogue available yet.</p>
+          <p class="text-slate-600">No catalogue available yet.</p>
         }
         @for (group of byLevel(); track group.level) {
-          <article class="card">
-            <header style="display:flex;justify-content:space-between;align-items:center;">
-              <h3 style="margin:0;">{{ levelLabel(group.level) }}</h3>
-              <span style="color:#64748b;font-size:0.85rem;">{{ group.lessons.length }} lesson(es)</span>
+          <article class="bg-white border border-slate-200 rounded-lg p-4 mb-3">
+            <header class="flex items-center justify-between mb-3">
+              <h3 class="text-base font-semibold text-slate-900 m-0">{{ levelLabel(group.level) }}</h3>
+              <span class="text-slate-500 text-sm">{{ group.lessons.length }} lesson(es)</span>
             </header>
             @for (lesson of group.lessons; track lesson.id) {
-              <div
-                style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0;border-top:1px solid #e2e8f0;margin-top:0.5rem;"
-              >
-                <div style="flex:1;">
-                  <div>
-                    <strong>{{ lesson.title }}</strong>
-                    <span style="color:#1f2937;background:#e2e8f0;margin-left:0.4rem;padding:0.05rem 0.4rem;border-radius:4px;font-size:0.75rem;">
+              <div class="flex items-center justify-between gap-3 py-3 border-t border-slate-200">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center flex-wrap gap-2">
+                    <strong class="text-slate-900">{{ lesson.title }}</strong>
+                    <span class="bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded text-xs">
                       {{ lesson.categoryName }}
                     </span>
-                    <span style="color:#64748b;margin-left:0.4rem;font-size:0.85rem;">{{ lesson.cardCount }} cards</span>
+                    <span class="text-slate-500 text-sm">{{ lesson.cardCount }} cards</span>
                     @if (isEnrolled(lesson.id)) {
-                      <span style="color:#15803d;margin-left:0.4rem;font-size:0.85rem;">✓ Added</span>
+                      <span class="text-success text-sm">✓ Added</span>
                     }
                   </div>
                   @if (lesson.description) {
-                    <div style="color:#475569;font-size:0.9rem;">{{ lesson.description }}</div>
+                    <div class="text-slate-600 text-sm mt-1">{{ lesson.description }}</div>
                   }
                 </div>
-                <div class="row">
-                  <a [routerLink]="['/lessons', lesson.id]" [queryParams]="{ source: 'catalog' }">
-                    Preview
-                  </a>
+                <div class="flex items-center gap-2 shrink-0">
+                  <a
+                    [routerLink]="['/lessons', lesson.id]"
+                    [queryParams]="{ source: 'catalog' }"
+                    class="text-blue-700 hover:text-blue-900 no-underline text-sm"
+                  >Preview</a>
                   @if (isEnrolled(lesson.id)) {
-                    <a [routerLink]="['/lessons', enrolledLessonId(lesson.id)]">Open</a>
+                    <a
+                      [routerLink]="['/lessons', enrolledLessonId(lesson.id)]"
+                      class="text-blue-700 hover:text-blue-900 no-underline text-sm"
+                    >Open</a>
                   } @else {
                     <button
-                      class="primary"
+                      type="button"
+                      class="bg-slate-900 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
                       (click)="enrollById(lesson)"
                       [disabled]="isEnrolling(lesson.id)"
-                    >
-                      {{ isEnrolling(lesson.id) ? 'Adding…' : '+ Add' }}
-                    </button>
+                    >{{ isEnrolling(lesson.id) ? 'Adding…' : '+ Add' }}</button>
                   }
                 </div>
               </div>
@@ -125,45 +125,47 @@ type CatalogView = 'level' | 'category';
         }
       } @else {
         @if (catalog().length === 0 && !catalogLoading()) {
-          <p>No catalogue available yet.</p>
+          <p class="text-slate-600">No catalogue available yet.</p>
         }
         @for (group of catalog(); track group.id) {
-          <article class="card">
-            <header style="display:flex;justify-content:space-between;align-items:center;">
-              <h3 style="margin:0;">{{ group.name }}</h3>
-              <span style="color:#64748b;font-size:0.85rem;">{{ group.lessons.length }} lesson(s)</span>
+          <article class="bg-white border border-slate-200 rounded-lg p-4 mb-3">
+            <header class="flex items-center justify-between mb-3">
+              <h3 class="text-base font-semibold text-slate-900 m-0">{{ group.name }}</h3>
+              <span class="text-slate-500 text-sm">{{ group.lessons.length }} lesson(s)</span>
             </header>
             @for (lesson of group.lessons; track lesson.id) {
-              <div
-                style="display:flex;justify-content:space-between;align-items:center;padding:0.6rem 0;border-top:1px solid #e2e8f0;margin-top:0.5rem;"
-              >
-                <div style="flex:1;">
-                  <div>
-                    <strong>{{ lesson.title }}</strong>
-                    <span style="color:#64748b;margin-left:0.4rem;font-size:0.85rem;">[{{ lesson.level }}]</span>
-                    <span style="color:#64748b;margin-left:0.4rem;font-size:0.85rem;">{{ lesson.cardCount }} cards</span>
+              <div class="flex items-center justify-between gap-3 py-3 border-t border-slate-200">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center flex-wrap gap-2">
+                    <strong class="text-slate-900">{{ lesson.title }}</strong>
+                    <span class="text-slate-500 text-sm">[{{ lesson.level }}]</span>
+                    <span class="text-slate-500 text-sm">{{ lesson.cardCount }} cards</span>
                     @if (isEnrolled(lesson.id)) {
-                      <span style="color:#15803d;margin-left:0.4rem;font-size:0.85rem;">✓ Added</span>
+                      <span class="text-success text-sm">✓ Added</span>
                     }
                   </div>
                   @if (lesson.description) {
-                    <div style="color:#475569;font-size:0.9rem;">{{ lesson.description }}</div>
+                    <div class="text-slate-600 text-sm mt-1">{{ lesson.description }}</div>
                   }
                 </div>
-                <div class="row">
-                  <a [routerLink]="['/lessons', lesson.id]" [queryParams]="{ source: 'catalog' }">
-                    Preview
-                  </a>
+                <div class="flex items-center gap-2 shrink-0">
+                  <a
+                    [routerLink]="['/lessons', lesson.id]"
+                    [queryParams]="{ source: 'catalog' }"
+                    class="text-blue-700 hover:text-blue-900 no-underline text-sm"
+                  >Preview</a>
                   @if (isEnrolled(lesson.id)) {
-                    <a [routerLink]="['/lessons', enrolledLessonId(lesson.id)]">Open</a>
+                    <a
+                      [routerLink]="['/lessons', enrolledLessonId(lesson.id)]"
+                      class="text-blue-700 hover:text-blue-900 no-underline text-sm"
+                    >Open</a>
                   } @else {
                     <button
-                      class="primary"
+                      type="button"
+                      class="bg-slate-900 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
                       (click)="enroll(lesson)"
                       [disabled]="isEnrolling(lesson.id)"
-                    >
-                      {{ isEnrolling(lesson.id) ? 'Adding…' : '+ Add to my lessons' }}
-                    </button>
+                    >{{ isEnrolling(lesson.id) ? 'Adding…' : '+ Add to my lessons' }}</button>
                   }
                 </div>
               </div>
@@ -174,71 +176,105 @@ type CatalogView = 'level' | 'category';
     </section>
 
     @if (creating()) {
-      <section class="card">
-        <h2>Create your own lesson</h2>
+      <section class="bg-white border border-slate-200 rounded-lg p-4 mb-4">
+        <h2 class="text-lg font-semibold text-slate-900 mt-0 mb-3">Create your own lesson</h2>
         <form (submit)="onCreate($event)">
-          <div style="margin-bottom:0.5rem;">
-            <label for="title">Title</label>
-            <input id="title" name="title" required [(ngModel)]="draft.title" />
+          <div class="mb-2">
+            <label for="title" class="block text-sm text-slate-600 mb-1">Title</label>
+            <input
+              id="title"
+              name="title"
+              required
+              [(ngModel)]="draft.title"
+              class="w-full px-2.5 py-1.5 rounded-md border border-slate-300 focus:border-slate-500 focus:outline-none"
+            />
           </div>
-          <div style="margin-bottom:0.5rem;">
-            <label for="description">Description (optional)</label>
-            <input id="description" name="description" [(ngModel)]="draft.description" />
+          <div class="mb-2">
+            <label for="description" class="block text-sm text-slate-600 mb-1">Description (optional)</label>
+            <input
+              id="description"
+              name="description"
+              [(ngModel)]="draft.description"
+              class="w-full px-2.5 py-1.5 rounded-md border border-slate-300 focus:border-slate-500 focus:outline-none"
+            />
           </div>
-          <div style="margin-bottom:0.5rem;">
-            <label for="category">Category</label>
-            <select id="category" name="category" required [(ngModel)]="draft.categoryId">
+          <div class="mb-2">
+            <label for="category" class="block text-sm text-slate-600 mb-1">Category</label>
+            <select
+              id="category"
+              name="category"
+              required
+              [(ngModel)]="draft.categoryId"
+              class="w-full px-2.5 py-1.5 rounded-md border border-slate-300 focus:border-slate-500 focus:outline-none"
+            >
               <option value="" disabled>Select…</option>
               @for (g of catalog(); track g.id) {
                 <option [value]="g.id">{{ g.name }}</option>
               }
             </select>
           </div>
-          <div style="margin-bottom:0.5rem;">
-            <label for="level">Level</label>
-            <select id="level" name="level" [(ngModel)]="draft.level">
+          <div class="mb-2">
+            <label for="level" class="block text-sm text-slate-600 mb-1">Level</label>
+            <select
+              id="level"
+              name="level"
+              [(ngModel)]="draft.level"
+              class="w-full px-2.5 py-1.5 rounded-md border border-slate-300 focus:border-slate-500 focus:outline-none"
+            >
               @for (l of levels; track l) {
                 <option [value]="l">{{ l }}</option>
               }
             </select>
           </div>
           @if (createError()) {
-            <p class="error">{{ createError() }}</p>
+            <p class="text-error text-sm mb-2">{{ createError() }}</p>
           }
-          <button type="submit" class="primary" [disabled]="creatingBusy() || !draft.categoryId">
-            {{ creatingBusy() ? 'Saving…' : 'Add lesson' }}
-          </button>
+          <button
+            type="submit"
+            class="bg-slate-900 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+            [disabled]="creatingBusy() || !draft.categoryId"
+          >{{ creatingBusy() ? 'Saving…' : 'Add lesson' }}</button>
         </form>
       </section>
     }
 
     <section>
-      <h2>My lessons</h2>
+      <h2 class="text-lg font-semibold text-slate-900 mb-3">My lessons</h2>
       @if (lessonsLoading()) {
-        <p>Loading…</p>
+        <p class="text-slate-600">Loading…</p>
       } @else if (lessons().length === 0) {
-        <p style="color:#475569;">
+        <p class="text-slate-600">
           You haven't added any lessons yet. Pick one from the catalogue above to get started.
         </p>
       } @else {
-        @for (l of lessons(); track l.id) {
-          <article class="card">
-            <div class="row" style="justify-content:space-between;">
-              <div>
-                <strong>{{ l.title }}</strong>
-                <span style="color:#64748b;margin-left:0.5rem;">[{{ l.level }}]</span>
-                <span style="color:#64748b;margin-left:0.5rem;">{{ l.cards.length }} cards</span>
+        <div class="grid gap-3">
+          @for (l of lessons(); track l.id) {
+            <article class="bg-white border border-slate-200 rounded-lg p-4">
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex items-center flex-wrap gap-2">
+                    <strong class="text-slate-900">{{ l.title }}</strong>
+                    <span class="text-slate-500 text-sm">[{{ l.level }}]</span>
+                    <span class="text-slate-500 text-sm">{{ l.cards.length }} cards</span>
+                  </div>
+                  @if (l.description) {
+                    <p class="text-slate-600 text-sm mt-1">{{ l.description }}</p>
+                  }
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                  <a
+                    [routerLink]="['/study', l.id]"
+                    class="px-2.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-sm no-underline text-slate-900"
+                  >Study</a>
+                  <a
+                    [routerLink]="['/lessons', l.id]"
+                    class="px-2.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-sm no-underline text-slate-900"
+                  >Open</a>
+                </div>
               </div>
-              <div class="row">
-                <a [routerLink]="['/study', l.id]">Study</a>
-                <a [routerLink]="['/lessons', l.id]">Open</a>
-              </div>
-            </div>
-            @if (l.description) {
-              <p style="margin:0.5rem 0 0;color:#475569;">{{ l.description }}</p>
-            }
-          </article>
-        }
+            </article>
+          }
+        </div>
       }
     </section>
   `,
