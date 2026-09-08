@@ -3,11 +3,6 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DueCard, Rating, ReviewService } from '../../core/services/review.service';
 import { TtsService } from '../../core/services/tts.service';
 
-interface SessionStat {
-  rating: Rating;
-  count: number;
-}
-
 interface SessionSummary {
   total: number;
   byRating: Record<Rating, number>;
@@ -19,105 +14,143 @@ interface SessionSummary {
   standalone: true,
   imports: [RouterLink],
   template: `
-    <a routerLink="/lessons">← Back</a>
+    <a routerLink="/lessons" class="inline-block text-sm text-slate-600 hover:text-slate-900 mb-3">← Back</a>
+
     @if (lessonTitle(); as title) {
-      <h2 style="margin-top:0.5rem;">{{ title }}</h2>
+      <h2 class="text-xl font-semibold text-slate-900 mt-1 mb-3">{{ title }}</h2>
     }
 
     @if (loading()) {
-      <p>Loading…</p>
+      <p class="text-slate-600">Loading…</p>
     } @else if (error()) {
-      <p class="error">{{ error() }}</p>
-      <button (click)="restart()">Retry</button>
+      <p class="text-error">{{ error() }}</p>
+      <button type="button" class="mt-2 px-3 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50" (click)="restart()">Retry</button>
     } @else {
       @if (summary(); as s) {
-        <section class="card">
-          <h2 style="margin-top:0;">Session complete</h2>
+        <section class="bg-white border border-slate-200 rounded-lg p-4">
+          <h2 class="text-lg font-semibold text-slate-900 mt-0 mb-3">Session complete</h2>
           <p>You reviewed <strong>{{ s.total }}</strong> card(s).</p>
-          <ul style="list-style:none;padding:0;">
+          <ul class="list-none p-0 m-0 space-y-1">
             <li>Again: {{ s.byRating.again }}</li>
             <li>Hard: {{ s.byRating.hard }}</li>
             <li>Good: {{ s.byRating.good }}</li>
             <li>Easy: {{ s.byRating.easy }}</li>
           </ul>
           @if (s.nextDueAt) {
-            <p style="color:#475569;font-size:0.9rem;">
+            <p class="text-slate-600 text-sm mt-3">
               Next due: {{ formatDate(s.nextDueAt) }}
             </p>
           } @else {
-            <p style="color:#15803d;">All caught up — nothing else is due right now.</p>
+            <p class="text-success text-sm mt-3">All caught up — nothing else is due right now.</p>
           }
-          <div class="row" style="margin-top:0.5rem;">
-            <button (click)="restart()">Study again</button>
-            <a routerLink="/lessons">Done</a>
+          <div class="flex gap-2 mt-3">
+            <button type="button" class="px-3 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50" (click)="restart()">Study again</button>
+            <a routerLink="/lessons" class="px-3 py-1.5 rounded-md border border-slate-300 hover:bg-slate-50 no-underline text-slate-900">Done</a>
           </div>
         </section>
       } @else if (queue().length === 0) {
-        <section class="card">
-          <h2 style="margin-top:0;">Nothing due</h2>
-          <p>No cards are due for review in this lesson right now. Come back later.</p>
-          <a routerLink="/lessons">Back to lessons</a>
+        <section class="bg-white border border-slate-200 rounded-lg p-4">
+          <h2 class="text-lg font-semibold text-slate-900 mt-0">Nothing due</h2>
+          <p class="text-slate-600">No cards are due for review in this lesson right now. Come back later.</p>
+          <a routerLink="/lessons" class="text-blue-700 hover:text-blue-900">Back to lessons</a>
         </section>
       } @else {
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
-        <span style="color:#64748b;font-size:0.9rem;">
-          {{ index() + 1 }} / {{ queue().length }}
-        </span>
-        <button (click)="speak(current())" [disabled]="!current() || !ttsSupported()">
-          Speak
-        </button>
-      </div>
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-slate-500 text-sm">
+            {{ index() + 1 }} / {{ queue().length }}
+          </span>
+        </div>
 
-      @if (current(); as c) {
-        <article class="card">
-          <div style="text-align:center;padding:1rem 0;">
-            <div style="font-size:2rem;font-weight:600;">{{ c.term }}</div>
-            @if (speaking()) {
-              <div style="color:#15803d;font-size:0.85rem;margin-top:0.25rem;">● speaking</div>
-            }
-          </div>
-
-          @if (flipped()) {
-            <div style="border-top:1px solid #e2e8f0;padding-top:0.75rem;">
-              <p style="margin:0 0 0.5rem;"><strong>{{ c.definition }}</strong></p>
-              @if (c.example) {
-                <p style="margin:0 0 0.25rem;color:#475569;font-style:italic;">"{{ c.example }}"</p>
-              }
-              @if (c.translation) {
-                <p style="margin:0;color:#64748b;">{{ c.translation }}</p>
-              }
-              @if (c.explanationEs) {
-                <details style="margin-top:0.5rem;" open>
-                  <summary style="cursor:pointer;color:#1d4ed8;">Explicación en español</summary>
-                  <p style="margin:0.5rem 0 0;color:#475569;">{{ c.explanationEs }}</p>
-                </details>
-              }
-              <div class="row" style="margin-top:0.5rem;">
-                <button (click)="speakTerm(c)">🔊 EN</button>
-                <button (click)="speakEs(c)" [disabled]="!spanishText(c)">🔊 ES</button>
+        @if (current(); as c) {
+          <article class="bg-white border border-slate-200 rounded-lg p-4">
+            <div class="text-center py-4">
+              <div class="flex items-center justify-center gap-2">
+                <div class="text-3xl font-semibold text-slate-900">{{ c.term }}</div>
+                <button
+                  type="button"
+                  class="text-slate-500 hover:text-slate-900 text-lg disabled:opacity-30"
+                  (click)="speakText(c.term, 'en-US', 0.9)"
+                  [disabled]="speaking() || !ttsSupported()"
+                  title="Hear the term in English"
+                  aria-label="Hear the term in English"
+                >🔊</button>
               </div>
-              <p style="margin:0.5rem 0 0;color:#94a3b8;font-size:0.8rem;">
-                ease {{ c.easeFactor.toFixed(2) }} · interval {{ c.intervalDays }}d · reps {{ c.repetitions }} · lapses {{ c.lapses }}
-              </p>
+              @if (speaking()) {
+                <div class="text-success text-sm mt-1">● speaking</div>
+              }
             </div>
 
-            <div class="row" style="margin-top:0.75rem;justify-content:space-between;">
-              <button (click)="rate('again')" [disabled]="busy()">Again</button>
-              <button (click)="rate('hard')" [disabled]="busy()">Hard</button>
-              <button (click)="rate('good')" class="primary" [disabled]="busy()">Good</button>
-              <button (click)="rate('easy')" [disabled]="busy()">Easy</button>
-            </div>
-          } @else {
-            <div style="text-align:center;margin-top:0.5rem;">
-              <button class="primary" (click)="flip()">Show answer</button>
-            </div>
+            @if (flipped()) {
+              <div class="border-t border-slate-200 pt-3 mt-2">
+                <div class="flex items-start gap-2">
+                  <p class="m-0 font-semibold text-slate-900 flex-1">{{ c.definition }}</p>
+                  <button
+                    type="button"
+                    class="shrink-0 text-slate-500 hover:text-slate-900 text-base disabled:opacity-30"
+                    (click)="speakText(c.definition, 'en-US', 0.9)"
+                    [disabled]="speaking() || !ttsSupported()"
+                    title="Read definition in English"
+                    aria-label="Read definition in English"
+                  >🔊</button>
+                </div>
+
+                @if (c.example) {
+                  <div class="mt-1 flex items-start gap-2">
+                    <p class="m-0 text-slate-600 italic flex-1">"{{ c.example }}"</p>
+                    <button
+                      type="button"
+                      class="shrink-0 text-slate-500 hover:text-slate-900 text-base disabled:opacity-30"
+                      (click)="speakText(c.example!, 'en-US', 0.9)"
+                      [disabled]="speaking() || !ttsSupported()"
+                      title="Read example in English"
+                      aria-label="Read example in English"
+                    >🔊</button>
+                  </div>
+                }
+
+                @if (c.translation) {
+                  <p class="mt-1 text-slate-500 text-sm">{{ c.translation }}</p>
+                }
+
+                @if (c.explanationEs) {
+                  <details class="mt-3 group" open>
+                    <summary class="cursor-pointer text-blue-700 text-sm select-none hover:text-blue-900">
+                      Explicación en español
+                    </summary>
+                    <p class="mt-2 text-slate-600 text-sm leading-relaxed">{{ c.explanationEs }}</p>
+                    <button
+                      type="button"
+                      class="mt-2 px-2.5 py-1 text-xs rounded-md border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+                      (click)="speakText(c.explanationEs!, 'es-ES', 0.95)"
+                      [disabled]="speaking() || !ttsSupported()"
+                    >
+                      🔊 Leer en español
+                    </button>
+                  </details>
+                }
+
+                <p class="mt-2 text-slate-400 text-xs">
+                  ease {{ c.easeFactor.toFixed(2) }} · interval {{ c.intervalDays }}d · reps {{ c.repetitions }} · lapses {{ c.lapses }}
+                </p>
+              </div>
+
+              <div class="flex justify-between gap-2 mt-4">
+                <button type="button" class="flex-1 px-2 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50" (click)="rate('again')" [disabled]="busy()">Again</button>
+                <button type="button" class="flex-1 px-2 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50" (click)="rate('hard')" [disabled]="busy()">Hard</button>
+                <button type="button" class="flex-1 px-2 py-1.5 rounded-md bg-slate-900 text-white font-medium hover:bg-slate-700 disabled:opacity-50" (click)="rate('good')" [disabled]="busy()">Good</button>
+                <button type="button" class="flex-1 px-2 py-1.5 rounded-md border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50" (click)="rate('easy')" [disabled]="busy()">Easy</button>
+              </div>
+            } @else {
+              <div class="text-center mt-2">
+                <button type="button" class="bg-slate-900 text-white px-4 py-1.5 rounded-md font-medium hover:bg-slate-700" (click)="flip()">Show answer</button>
+              </div>
+            }
+          </article>
+
+          @if (lastError()) {
+            <p class="text-error text-sm mt-2">{{ lastError() }}</p>
           }
-        </article>
-
-        @if (lastError()) {
-          <p class="error">{{ lastError() }}</p>
         }
-      }
       }
     }
   `,
@@ -174,43 +207,12 @@ export class StudyPage implements OnInit {
     }
   }
 
-  async speak(card: DueCard | null): Promise<void> {
-    return this.speakTerm(card);
-  }
-
-  async speakTerm(card: DueCard | null): Promise<void> {
-    if (!card) {
-      return;
-    }
-    this.speaking.set(true);
-    const handle = this.tts.speak(card.term, { lang: 'en-US', rate: 0.9 });
-    if (!handle) {
-      this.speaking.set(false);
-      return;
-    }
-    try {
-      await handle.done;
-    } catch {
-      // ignore
-    } finally {
-      this.speaking.set(false);
-    }
-  }
-
-  spanishText(card: DueCard): string | null {
-    return card.explanationEs ?? card.translation;
-  }
-
-  async speakEs(card: DueCard | null): Promise<void> {
-    if (!card) {
-      return;
-    }
-    const text = this.spanishText(card);
+  async speakText(text: string, lang: 'en-US' | 'es-ES', rate: number): Promise<void> {
     if (!text) {
       return;
     }
     this.speaking.set(true);
-    const handle = this.tts.speak(text, { lang: 'es-ES', rate: 0.95 });
+    const handle = this.tts.speak(text, { lang, rate });
     if (!handle) {
       this.speaking.set(false);
       return;

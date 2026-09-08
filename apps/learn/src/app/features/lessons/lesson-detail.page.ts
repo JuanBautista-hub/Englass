@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { UpperCasePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { LessonsService } from '../../core/services/lessons.service';
 import { TtsService } from '../../core/services/tts.service';
@@ -7,127 +8,182 @@ import { Lesson, VocabularyCard } from '../../core/models';
 
 interface CardSpeechState {
   speaking: 'en' | 'es' | null;
+  field: 'term' | 'definition' | 'example' | null;
   error: string | null;
 }
 
 @Component({
   selector: 'app-lesson-detail',
   standalone: true,
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, UpperCasePipe],
   template: `
-    <a routerLink="/lessons">← Back</a>
+    <a routerLink="/lessons" class="inline-block text-sm text-slate-600 hover:text-slate-900 mb-3">← Back</a>
+
     @if (lesson(); as l) {
-      <section class="card" style="margin-top:0.75rem;">
-        <div class="row" style="justify-content:space-between;align-items:flex-start;">
+      <section class="bg-white border border-slate-200 rounded-lg p-4 mb-3">
+        <div class="flex items-start justify-between gap-2">
           <div>
-            <h2 style="margin:0;">{{ l.title }}</h2>
-            <p style="margin:0;color:#64748b;">[{{ l.level }}]</p>
+            <h2 class="m-0 text-xl font-semibold text-slate-900">{{ l.title }}</h2>
+            <p class="m-0 text-sm text-slate-500">[{{ l.level }}]</p>
           </div>
           @if (isCatalog()) {
-            <button class="primary" (click)="enroll()" [disabled]="enrolling()">
+            <button
+              type="button"
+              class="bg-slate-900 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+              (click)="enroll()"
+              [disabled]="enrolling()"
+            >
               {{ enrolling() ? 'Adding…' : '+ Add to my lessons' }}
             </button>
           }
         </div>
         @if (l.description) {
-          <p style="color:#475569;">{{ l.description }}</p>
+          <p class="mt-2 text-slate-600">{{ l.description }}</p>
         }
         @if (isCatalog()) {
-          <p style="color:#475569;font-size:0.85rem;margin:0;">
+          <p class="text-xs text-slate-500 m-0">
             Preview from the catalogue. Add it to start tracking your progress.
           </p>
         }
         @if (!ttsSupported()) {
-          <p class="error">
+          <p class="text-error text-sm mt-2">
             Your browser does not support the Web Speech API. Try Chrome, Edge or Safari.
           </p>
         }
       </section>
 
       <section>
-        <h2>Cards</h2>
+        <h2 class="text-lg font-semibold text-slate-900 mb-2">Cards</h2>
         @if (l.cards.length === 0) {
-          <p>No cards yet.</p>
+          <p class="text-slate-600">No cards yet.</p>
         }
         @for (c of l.cards; track c.id) {
-          <article class="card">
-            <div class="row" style="justify-content:space-between;">
-              <div>
-                <strong>{{ c.term }}</strong>
+          <article class="bg-white border border-slate-200 rounded-lg p-4 mb-3">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <strong class="text-slate-900">{{ c.term }}</strong>
                 @if (stateFor(c.id); as st) {
-                  @if (st.speaking === 'en') {
-                    <span style="color:#15803d;margin-left:0.5rem;font-size:0.85rem;">● EN</span>
-                  } @else if (st.speaking === 'es') {
-                    <span style="color:#15803d;margin-left:0.5rem;font-size:0.85rem;">● ES</span>
+                  @if (st.speaking) {
+                    <span class="text-success text-xs">● {{ st.speaking | uppercase }} {{ st.field }}</span>
                   }
                 }
               </div>
-              <div class="row">
-                <button (click)="speak(c, 'en')" [disabled]="isSpeaking(c.id) || !ttsSupported()">
-                  Speak (EN)
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-sm rounded-md border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+                  (click)="speak(c.term, c.id, 'en', 'term')"
+                  [disabled]="isSpeaking(c.id) || !ttsSupported()"
+                  title="Speak the term in English"
+                >
+                  🔊 Speak (EN)
                 </button>
-                <button (click)="speak(c, 'es')" [disabled]="isSpeaking(c.id) || !ttsSupported() || !spanishText(c)">
-                  Hablar (ES)
+                <button
+                  type="button"
+                  class="px-2.5 py-1 text-sm rounded-md border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-50"
+                  (click)="speak(spanishText(c) ?? '', c.id, 'es', null)"
+                  [disabled]="isSpeaking(c.id) || !ttsSupported() || !spanishText(c)"
+                  title="Leer la explicación en español"
+                >
+                  🔊 Hablar (ES)
                 </button>
               </div>
             </div>
-            <p style="margin:0.5rem 0 0;">{{ c.definition }}</p>
+
+            <div class="mt-2 flex items-start gap-2">
+              <p class="m-0 text-slate-800 flex-1">{{ c.definition }}</p>
+              <button
+                type="button"
+                class="shrink-0 text-slate-500 hover:text-slate-900 text-base disabled:opacity-30"
+                (click)="speak(c.definition, c.id, 'en', 'definition')"
+                [disabled]="isSpeaking(c.id) || !ttsSupported()"
+                title="Read definition in English"
+                aria-label="Read definition in English"
+              >
+                🔊
+              </button>
+            </div>
+
             @if (c.example) {
-              <p style="margin:0.25rem 0 0;color:#475569;font-style:italic;">"{{ c.example }}"</p>
+              <div class="mt-1 flex items-start gap-2">
+                <p class="m-0 text-slate-600 italic flex-1">"{{ c.example }}"</p>
+                <button
+                  type="button"
+                  class="shrink-0 text-slate-500 hover:text-slate-900 text-base disabled:opacity-30"
+                  (click)="speak(c.example!, c.id, 'en', 'example')"
+                  [disabled]="isSpeaking(c.id) || !ttsSupported()"
+                  title="Read example in English"
+                  aria-label="Read example in English"
+                >
+                  🔊
+                </button>
+              </div>
             }
+
             @if (c.translation) {
-              <p style="margin:0.25rem 0 0;color:#64748b;">{{ c.translation }}</p>
+              <p class="mt-1 text-slate-500 text-sm">{{ c.translation }}</p>
             }
+
             @if (c.explanationEs) {
-              <details style="margin-top:0.5rem;">
-                <summary style="cursor:pointer;color:#1d4ed8;">Explicación en español</summary>
-                <p style="margin:0.5rem 0 0;color:#475569;">{{ c.explanationEs }}</p>
+              <details class="mt-3 group">
+                <summary class="cursor-pointer text-blue-700 text-sm select-none hover:text-blue-900">
+                  Explicación en español
+                </summary>
+                <p class="mt-2 text-slate-600 text-sm leading-relaxed">{{ c.explanationEs }}</p>
               </details>
             }
+
             @if (errorFor(c.id); as msg) {
-              <p class="error">{{ msg }}</p>
+              <p class="text-error text-sm mt-2">{{ msg }}</p>
             }
           </article>
         }
       </section>
 
       @if (!isCatalog()) {
-        <section class="card">
-          <h3>Add card</h3>
+        <section class="bg-white border border-slate-200 rounded-lg p-4">
+          <h3 class="text-lg font-semibold text-slate-900 mt-0 mb-3">Add card</h3>
           <form (submit)="onAddCard($event, l.id)">
-            <div style="margin-bottom:0.5rem;">
-              <label for="term">Term</label>
-              <input id="term" name="term" required [(ngModel)]="cardDraft.term" />
+            <div class="mb-2">
+              <label for="term" class="block text-sm text-slate-600 mb-1">Term</label>
+              <input id="term" name="term" required [(ngModel)]="cardDraft.term"
+                class="w-full px-2.5 py-1.5 rounded-md border border-slate-300 focus:border-slate-500 focus:outline-none" />
             </div>
-            <div style="margin-bottom:0.5rem;">
-              <label for="definition">Definition</label>
-              <textarea id="definition" name="definition" rows="2" required [(ngModel)]="cardDraft.definition"></textarea>
+            <div class="mb-2">
+              <label for="definition" class="block text-sm text-slate-600 mb-1">Definition</label>
+              <textarea id="definition" name="definition" rows="2" required [(ngModel)]="cardDraft.definition"
+                class="w-full px-2.5 py-1.5 rounded-md border border-slate-300 focus:border-slate-500 focus:outline-none"></textarea>
             </div>
-            <div style="margin-bottom:0.5rem;">
-              <label for="example">Example (optional)</label>
-              <input id="example" name="example" [(ngModel)]="cardDraft.example" />
+            <div class="mb-2">
+              <label for="example" class="block text-sm text-slate-600 mb-1">Example (optional)</label>
+              <input id="example" name="example" [(ngModel)]="cardDraft.example"
+                class="w-full px-2.5 py-1.5 rounded-md border border-slate-300 focus:border-slate-500 focus:outline-none" />
             </div>
-            <div style="margin-bottom:0.5rem;">
-              <label for="translation">Translation (optional)</label>
-              <input id="translation" name="translation" [(ngModel)]="cardDraft.translation" />
+            <div class="mb-2">
+              <label for="translation" class="block text-sm text-slate-600 mb-1">Translation (optional)</label>
+              <input id="translation" name="translation" [(ngModel)]="cardDraft.translation"
+                class="w-full px-2.5 py-1.5 rounded-md border border-slate-300 focus:border-slate-500 focus:outline-none" />
             </div>
-            <div style="margin-bottom:0.5rem;">
-              <label for="explanationEs">Explicación en español (opcional)</label>
-              <textarea id="explanationEs" name="explanationEs" rows="3" [(ngModel)]="cardDraft.explanationEs"></textarea>
+            <div class="mb-2">
+              <label for="explanationEs" class="block text-sm text-slate-600 mb-1">Explicación en español (opcional)</label>
+              <textarea id="explanationEs" name="explanationEs" rows="3" [(ngModel)]="cardDraft.explanationEs"
+                class="w-full px-2.5 py-1.5 rounded-md border border-slate-300 focus:border-slate-500 focus:outline-none"></textarea>
             </div>
             @if (error()) {
-              <p class="error">{{ error() }}</p>
+              <p class="text-error text-sm mb-2">{{ error() }}</p>
             }
-            <button type="submit" class="primary" [disabled]="adding()">
+            <button type="submit"
+              class="bg-slate-900 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-700 disabled:opacity-50"
+              [disabled]="adding()">
               {{ adding() ? 'Saving…' : 'Add card' }}
             </button>
           </form>
         </section>
       }
     } @else if (loading()) {
-      <p>Loading…</p>
+      <p class="text-slate-600">Loading…</p>
     } @else {
-      <p>Lesson not found.</p>
+      <p class="text-slate-600">Lesson not found.</p>
     }
   `,
 })
@@ -166,7 +222,8 @@ export class LessonDetailPage implements OnInit, OnDestroy {
   }
 
   isSpeaking(cardId: string): boolean {
-    return this.stateFor(cardId)?.speaking !== null && this.stateFor(cardId)?.speaking !== undefined;
+    const st = this.stateFor(cardId);
+    return st?.speaking !== null && st?.speaking !== undefined;
   }
 
   errorFor(cardId: string): string | null {
@@ -177,31 +234,36 @@ export class LessonDetailPage implements OnInit, OnDestroy {
     return card.explanationEs ?? card.translation;
   }
 
-  async speak(card: VocabularyCard, lang: 'en' | 'es'): Promise<void> {
-    const text = lang === 'en' ? card.term : this.spanishText(card);
+  async speak(
+    text: string,
+    cardId: string,
+    lang: 'en' | 'es',
+    field: 'term' | 'definition' | 'example' | null,
+  ): Promise<void> {
     if (!text) {
       return;
     }
     this.tts.cancel();
-    this.patchSpeech(card.id, { speaking: lang, error: null });
+    this.patchSpeech(cardId, { speaking: lang, field, error: null });
     const handle = this.tts.speak(text, {
       lang: lang === 'en' ? 'en-US' : 'es-ES',
       rate: 0.9,
     });
     if (!handle) {
-      this.patchSpeech(card.id, { speaking: null, error: 'speech_synthesis_unavailable' });
+      this.patchSpeech(cardId, { speaking: null, field: null, error: 'speech_synthesis_unavailable' });
       return;
     }
     try {
       await handle.done;
     } catch (err: unknown) {
-      this.patchSpeech(card.id, {
+      this.patchSpeech(cardId, {
         speaking: null,
+        field: null,
         error: err instanceof Error ? err.message : 'speech_failed',
       });
       return;
     }
-    this.patchSpeech(card.id, { speaking: null });
+    this.patchSpeech(cardId, { speaking: null, field: null });
   }
 
   async enroll(): Promise<void> {
@@ -261,7 +323,7 @@ export class LessonDetailPage implements OnInit, OnDestroy {
 
   private patchSpeech(cardId: string, patch: Partial<CardSpeechState>): void {
     const next = new Map(this.speechStates());
-    const current = next.get(cardId) ?? { speaking: null, error: null };
+    const current = next.get(cardId) ?? { speaking: null, field: null, error: null };
     next.set(cardId, { ...current, ...patch });
     this.speechStates.set(next);
   }
