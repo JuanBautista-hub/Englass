@@ -19,15 +19,19 @@ datasource db {
 }
 
 model User {
-  id           String         @id @default(cuid())
-  email        String         @unique
-  passwordHash String         @map("password_hash")
-  displayName  String         @map("display_name")
-  createdAt    DateTime       @default(now()) @map("created_at")
-  updatedAt    DateTime       @updatedAt @map("updated_at")
-  lessons      Lesson[]
-  cardProgress CardProgress[]
-  reviewLogs   ReviewLog[]
+  id             String           @id @default(cuid())
+  email          String           @unique
+  passwordHash   String           @map("password_hash")
+  displayName    String           @map("display_name")
+  currentStreak  Int              @default(0) @map("current_streak")
+  bestStreak     Int              @default(0) @map("best_streak")
+  lastReviewedAt DateTime?        @map("last_reviewed_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  lessons        Lesson[]
+  cardProgress   CardProgress[]
+  reviewLogs     ReviewLog[]
+  achievements   UserAchievement[]
 
   @@map("users")
 }
@@ -108,20 +112,45 @@ model CardProgress {
 }
 
 model ReviewLog {
-  id               String         @id @default(cuid())
-  userId           String         @map("user_id")
-  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  cardId           String         @map("card_id")
-  card             VocabularyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
-  rating           String
-  reviewedAt       DateTime       @default(now()) @map("reviewed_at")
-  prevIntervalDays Int            @map("prev_interval_days")
-  newIntervalDays  Int            @map("new_interval_days")
-  prevEaseFactor   Float          @map("prev_ease_factor")
-  newEaseFactor    Float          @map("new_ease_factor")
-  lapsesAfter      Int            @map("lapses_after")
+  id              String         @id @default(cuid())
+  userId          String         @map("user_id")
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cardId          String         @map("card_id")
+  card            VocabularyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  rating          String
+  reviewedAt      DateTime       @default(now()) @map("reviewed_at")
+  prevIntervalDays Int           @map("prev_interval_days")
+  newIntervalDays  Int           @map("new_interval_days")
+  prevEaseFactor   Float         @map("prev_ease_factor")
+  newEaseFactor    Float         @map("new_ease_factor")
+  lapsesAfter      Int           @map("lapses_after")
 
   @@index([userId, reviewedAt])
   @@index([cardId])
   @@map("review_logs")
+}
+
+model Achievement {
+  id          String            @id @default(cuid())
+  slug        String            @unique
+  name        String
+  description String?
+  iconKey     String?           @map("icon_key")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  awards      UserAchievement[]
+
+  @@map("achievements")
+}
+
+model UserAchievement {
+  id            String      @id @default(cuid())
+  userId        String      @map("user_id")
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementId String      @map("achievement_id")
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+  awardedAt     DateTime    @default(now()) @map("awarded_at")
+
+  @@unique([userId, achievementId])
+  @@index([userId])
+  @@map("user_achievements")
 }

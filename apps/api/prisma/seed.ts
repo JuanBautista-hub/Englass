@@ -498,8 +498,42 @@ async function main(): Promise<void> {
     prisma.lesson.count(),
     prisma.vocabularyCard.count(),
   ]);
+  const achievementSeeds: Array<{ slug: string; name: string; description: string; iconKey: string }> = [
+    {
+      slug: 'a1-complete',
+      name: 'A1 Beginner · Complete',
+      description: 'You finished every A1 lesson in the catalogue.',
+      iconKey: 'badge-a1',
+    },
+    {
+      slug: 'a2-complete',
+      name: 'A2 Elementary · Complete',
+      description: 'You finished every A2 lesson in the catalogue.',
+      iconKey: 'badge-a2',
+    },
+    {
+      slug: 'b1-complete',
+      name: 'B1 Intermediate · Complete',
+      description: 'You finished every B1 lesson in the catalogue.',
+      iconKey: 'badge-b1',
+    },
+    {
+      slug: 'b2-complete',
+      name: 'B2 Upper Intermediate · Complete',
+      description: 'You finished every B2 lesson in the catalogue.',
+      iconKey: 'badge-b2',
+    },
+  ];
+  for (const a of achievementSeeds) {
+    await prisma.achievement.upsert({
+      where: { slug: a.slug },
+      create: a,
+      update: { name: a.name, description: a.description, iconKey: a.iconKey },
+    });
+  }
+  const achievementCount = await prisma.achievement.count();
   console.log(
-    `seed: ok (categories=${counts[0]}, lessons=${counts[1]}, cards=${counts[2]})`,
+    `seed: ok (categories=${counts[0]}, lessons=${counts[1]}, cards=${counts[2]}, achievements=${achievementCount})`,
   );
 }
 

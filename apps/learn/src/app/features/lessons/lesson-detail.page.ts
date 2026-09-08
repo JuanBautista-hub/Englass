@@ -8,7 +8,7 @@ import {
   parseBilingual,
   TtsService,
 } from '../../core/services/tts.service';
-import { Lesson, VocabularyCard } from '../../core/models';
+import { Lesson, Mastery, VocabularyCard } from '../../core/models';
 
 interface CardSpeechState {
   speaking: 'en' | 'es' | null;
@@ -70,8 +70,15 @@ interface BilingualPlayback {
         @for (c of l.cards; track c.id) {
           <article class="bg-white border border-slate-200 rounded-lg p-4 mb-3">
             <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <strong class="text-slate-900">{{ c.term }}</strong>
+                @if (c.mastery) {
+                  <span class="text-xs px-2 py-0.5 rounded-full"
+                        [class]="masteryClass(c.mastery)"
+                        [attr.aria-label]="'Mastery: ' + masteryLabel(c.mastery)">
+                    {{ masteryLabel(c.mastery) }}
+                  </span>
+                }
                 @if (stateFor(c.id); as st) {
                   @if (st.speaking) {
                     <span class="text-success text-xs">● {{ st.speaking | uppercase }} {{ st.field }}</span>
@@ -262,6 +269,18 @@ export class LessonDetailPage implements OnInit, OnDestroy {
 
   stateFor(cardId: string): CardSpeechState | null {
     return this.speechStates().get(cardId) ?? null;
+  }
+
+  masteryLabel(m: Mastery): string {
+    if (m === 'mastered') return 'Mastered';
+    if (m === 'reviewing') return 'Reviewing';
+    return 'Learning';
+  }
+
+  masteryClass(m: Mastery): string {
+    if (m === 'mastered') return 'bg-emerald-100 text-emerald-800';
+    if (m === 'reviewing') return 'bg-amber-100 text-amber-800';
+    return 'bg-slate-100 text-slate-700';
   }
 
   isSpeaking(cardId: string): boolean {

@@ -10,13 +10,14 @@ import {
   CatalogLessonSummary,
   Lesson,
 } from '../../core/models';
+import { LearningPathComponent } from './learning-path.component';
 
 type CatalogView = 'level' | 'category';
 
 @Component({
   selector: 'app-lessons',
   standalone: true,
-  imports: [FormsModule, RouterLink],
+  imports: [FormsModule, RouterLink, LearningPathComponent],
   template: `
     @if (stats(); as s) {
       <section class="bg-slate-100 border border-slate-200 rounded-lg p-4 mb-4">
@@ -37,6 +38,8 @@ type CatalogView = 'level' | 'category';
         </div>
       </section>
     }
+
+    <app-learning-path />
 
     <section class="mb-6">
       <header class="flex items-center justify-between mb-3 gap-3 flex-wrap">

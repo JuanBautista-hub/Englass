@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../../environments/environment';
+import { Mastery } from '../models';
 
 export interface DueCard {
   progressId: string;
@@ -20,6 +21,8 @@ export interface DueCard {
   lapses: number;
   dueAt: string;
   lastReviewedAt: string | null;
+  mastery: Mastery;
+  lastRatings: Array<{ rating: string; reviewedAt: string }>;
 }
 
 export interface ReviewStats {
@@ -39,6 +42,14 @@ export interface CardProgress {
   lapses: number;
   dueAt: string;
   lastReviewedAt: string | null;
+  mastery: Mastery;
+}
+
+export interface ReviewResult {
+  progress: CardProgress;
+  newlyAwarded: string[];
+  userBefore: { currentStreak: number; bestStreak: number };
+  userAfter: { currentStreak: number; bestStreak: number };
 }
 
 export type Rating = 'again' | 'hard' | 'good' | 'easy';
@@ -65,9 +76,9 @@ export class ReviewService {
     );
   }
 
-  review(cardId: string, rating: Rating): Promise<CardProgress> {
+  review(cardId: string, rating: Rating): Promise<ReviewResult> {
     return firstValueFrom(
-      this.http.post<CardProgress>(
+      this.http.post<ReviewResult>(
         `${environment.apiBaseUrl}/review/cards/${cardId}`,
         { rating },
       ),

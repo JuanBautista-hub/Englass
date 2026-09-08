@@ -8,6 +8,9 @@ import { TtsModule } from './tts/tts.module';
 import { CategoriesModule } from './categories/categories.module';
 import { SrsModule } from './srs/srs.module';
 import { ReviewModule } from './review/review.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { LearningPathModule } from './learning-path/learning-path.module';
+import { AchievementsModule } from './achievements/achievements.module';
 import { HealthController } from './health/health.controller';
 
 @Module({
@@ -21,6 +24,9 @@ import { HealthController } from './health/health.controller';
     TtsModule,
     SrsModule,
     ReviewModule,
+    DashboardModule,
+    LearningPathModule,
+    AchievementsModule,
   ],
   controllers: [HealthController],
 })

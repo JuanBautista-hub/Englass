@@ -5,6 +5,7 @@ import { UpdateLessonDto } from './dto/update-lesson.dto';
 import { CreateCardDto } from './dto/create-card.dto';
 import { SYSTEM_USER_ID } from '../common/constants';
 import { initialSrsState } from '../srs/sm2';
+import { computeMastery, type Mastery } from '../srs/mastery';
 
 export interface CardView {
   id: string;
@@ -16,6 +17,7 @@ export interface CardView {
   audioKey: string | null;
   level: string;
   ordinal: number;
+  mastery: Mastery | null;
 }
 
 export interface LessonView {
@@ -92,9 +94,22 @@ type CardRow = {
   audioKey: string | null;
   level: string;
   ordinal: number;
+  progress?: Array<{
+    repetitions: number;
+    easeFactor: number;
+    intervalDays: number;
+  }>;
 };
 
 function toCardView(row: CardRow): CardView {
+  const cp = row.progress?.[0];
+  const mastery = cp
+    ? computeMastery({
+        repetitions: cp.repetitions,
+        easeFactor: cp.easeFactor,
+        intervalDays: cp.intervalDays,
+      })
+    : null;
   return {
     id: row.id,
     term: row.term,
@@ -105,6 +120,7 @@ function toCardView(row: CardRow): CardView {
     audioKey: row.audioKey,
     level: row.level,
     ordinal: row.ordinal,
+    mastery,
   };
 }
 
@@ -133,13 +149,18 @@ export class LessonsService {
       orderBy: { createdAt: 'desc' },
       include: { cards: { orderBy: { ordinal: 'asc' } } },
     });
-    return rows.map(toLessonView);
+    return rows.map((r) => toLessonView({ ...r, ownerId }));
   }
 
   async findOne(id: string, ownerId: string): Promise<LessonView> {
     const row = await this.prisma.lesson.findUnique({
       where: { id },
-      include: { cards: { orderBy: { ordinal: 'asc' } } },
+      include: {
+        cards: {
+          orderBy: { ordinal: 'asc' },
+          include: { progress: { where: { userId: ownerId } } },
+        },
+      },
     });
     if (!row) {
       throw new NotFoundException('lesson_not_found');

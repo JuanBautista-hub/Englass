@@ -1,8 +1,8 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SrsService } from '../srs/srs.service';
+import { SrsService, type ApplyReviewResult } from '../srs/srs.service';
 import type { Rating } from '../srs/sm2';
-import type { CardProgressView } from '../srs/srs.service';
+import { computeMastery, type Mastery } from '../srs/mastery';
 
 export interface DueCardView {
   progressId: string;
@@ -21,6 +21,8 @@ export interface DueCardView {
   lapses: number;
   dueAt: string;
   lastReviewedAt: string | null;
+  mastery: Mastery;
+  lastRatings: Array<{ rating: string; reviewedAt: string }>;
 }
 
 export interface StudySessionSummary {
@@ -37,6 +39,13 @@ export interface ReviewStatsView {
   averageEase: number;
   lapses: number;
 }
+
+interface LastRatingRow {
+  rating: string;
+  reviewedAt: Date;
+}
+
+const LAST_RATINGS_LIMIT = 5;
 
 @Injectable()
 export class ReviewService {
@@ -62,24 +71,9 @@ export class ReviewService {
       include: { card: true },
       orderBy: [{ dueAt: 'asc' }, { card: { ordinal: 'asc' } }],
     });
-    return rows.map((r) => ({
-      progressId: r.id,
-      cardId: r.cardId,
-      lessonId,
-      lessonTitle: lesson.title,
-      term: r.card.term,
-      definition: r.card.definition,
-      example: r.card.example,
-      translation: r.card.translation,
-      explanationEs: r.card.explanationEs,
-      ordinal: r.card.ordinal,
-      easeFactor: r.easeFactor,
-      intervalDays: r.intervalDays,
-      repetitions: r.repetitions,
-      lapses: r.lapses,
-      dueAt: r.dueAt.toISOString(),
-      lastReviewedAt: r.lastReviewedAt ? r.lastReviewedAt.toISOString() : null,
-    }));
+    const cardIds = rows.map((r) => r.cardId);
+    const lastRatingsByCard = await this.fetchLastRatings(cardIds, userId);
+    return rows.map((r) => this.toDueCardView(r, lesson.id, lesson.title, lastRatingsByCard));
   }
 
   async listAllDueForUser(userId: string, limit = 50): Promise<DueCardView[]> {
@@ -89,27 +83,14 @@ export class ReviewService {
       orderBy: { dueAt: 'asc' },
       take: limit,
     });
-    return rows.map((r) => ({
-      progressId: r.id,
-      cardId: r.cardId,
-      lessonId: r.card.lessonId,
-      lessonTitle: r.card.lesson.title,
-      term: r.card.term,
-      definition: r.card.definition,
-      example: r.card.example,
-      translation: r.card.translation,
-      explanationEs: r.card.explanationEs,
-      ordinal: r.card.ordinal,
-      easeFactor: r.easeFactor,
-      intervalDays: r.intervalDays,
-      repetitions: r.repetitions,
-      lapses: r.lapses,
-      dueAt: r.dueAt.toISOString(),
-      lastReviewedAt: r.lastReviewedAt ? r.lastReviewedAt.toISOString() : null,
-    }));
+    const cardIds = rows.map((r) => r.cardId);
+    const lastRatingsByCard = await this.fetchLastRatings(cardIds, userId);
+    return rows.map((r) =>
+      this.toDueCardView(r, r.card.lessonId, r.card.lesson.title, lastRatingsByCard),
+    );
   }
 
-  async applyReview(userId: string, cardId: string, rating: Rating): Promise<CardProgressView> {
+  async applyReview(userId: string, cardId: string, rating: Rating): Promise<ApplyReviewResult> {
     const progress = await this.prisma.cardProgress.findUnique({
       where: { userId_cardId: { userId, cardId } },
     });
@@ -161,5 +142,81 @@ export class ReviewService {
       averageEase: Number((easeAgg._avg.easeFactor ?? 2.5).toFixed(2)),
       lapses: lapsesAgg._sum.lapses ?? 0,
     };
+  }
+
+  private toDueCardView(
+    r: {
+      id: string;
+      cardId: string;
+      easeFactor: number;
+      intervalDays: number;
+      repetitions: number;
+      lapses: number;
+      dueAt: Date;
+      lastReviewedAt: Date | null;
+      card: {
+        term: string;
+        definition: string;
+        example: string | null;
+        translation: string | null;
+        explanationEs: string | null;
+        ordinal: number;
+      };
+    },
+    lessonId: string,
+    lessonTitle: string,
+    lastRatingsByCard: Map<string, LastRatingRow[]>,
+  ): DueCardView {
+    const mastery = computeMastery({
+      repetitions: r.repetitions,
+      easeFactor: r.easeFactor,
+      intervalDays: r.intervalDays,
+    });
+    const lastRatings = (lastRatingsByCard.get(r.cardId) ?? []).map((x) => ({
+      rating: x.rating,
+      reviewedAt: x.reviewedAt.toISOString(),
+    }));
+    return {
+      progressId: r.id,
+      cardId: r.cardId,
+      lessonId,
+      lessonTitle,
+      term: r.card.term,
+      definition: r.card.definition,
+      example: r.card.example,
+      translation: r.card.translation,
+      explanationEs: r.card.explanationEs,
+      ordinal: r.card.ordinal,
+      easeFactor: r.easeFactor,
+      intervalDays: r.intervalDays,
+      repetitions: r.repetitions,
+      lapses: r.lapses,
+      dueAt: r.dueAt.toISOString(),
+      lastReviewedAt: r.lastReviewedAt ? r.lastReviewedAt.toISOString() : null,
+      mastery,
+      lastRatings,
+    };
+  }
+
+  private async fetchLastRatings(
+    cardIds: string[],
+    userId: string,
+  ): Promise<Map<string, LastRatingRow[]>> {
+    if (cardIds.length === 0) {
+      return new Map();
+    }
+    const rows = await this.prisma.reviewLog.findMany({
+      where: { userId, cardId: { in: cardIds } },
+      orderBy: { reviewedAt: 'desc' },
+    });
+    const grouped = new Map<string, LastRatingRow[]>();
+    for (const row of rows) {
+      const list = grouped.get(row.cardId) ?? [];
+      if (list.length < LAST_RATINGS_LIMIT) {
+        list.push({ rating: row.rating, reviewedAt: row.reviewedAt });
+        grouped.set(row.cardId, list);
+      }
+    }
+    return grouped;
   }
 }
