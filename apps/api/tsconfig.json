@@ -19,7 +19,12 @@
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "paths": {
+      "@engclass/shared": ["../../packages/shared/dist/index.d.ts"],
+      "@engclass/shared/*": ["../../packages/shared/dist/*"]
+    },
+    "moduleResolution": "node"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
