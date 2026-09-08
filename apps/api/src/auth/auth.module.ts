@@ -7,6 +7,7 @@ import { LessonsModule } from '../lessons/lessons.module';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
+import { RateLimitStore } from './rate-limit.store';
 
 @Module({
   imports: [
@@ -23,7 +24,7 @@ import { JwtStrategy } from './jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService],
+  providers: [AuthService, JwtStrategy, RateLimitStore],
+  exports: [AuthService, RateLimitStore],
 })
 export class AuthModule {}

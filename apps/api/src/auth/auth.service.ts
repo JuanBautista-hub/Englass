@@ -3,9 +3,11 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
 import { LessonsService } from '../lessons/lessons.service';
+import { RateLimitStore } from './rate-limit.store';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './jwt.strategy';
+import type { MeView } from '@engclass/shared';
 
 export interface AuthResult {
   accessToken: string;
@@ -20,6 +22,7 @@ export class AuthService {
     private readonly users: UsersService,
     private readonly lessons: LessonsService,
     private readonly jwt: JwtService,
+    private readonly rateLimits: RateLimitStore,
   ) {}
 
   async signup(dto: SignupDto): Promise<AuthResult> {
@@ -60,6 +63,24 @@ export class AuthService {
       email: user.email,
       displayName: user.displayName,
     });
+  }
+
+  async me(userId: string): Promise<MeView | null> {
+    const user = await this.users.findById(userId);
+    if (!user) {
+      return null;
+    }
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      level: null,
+      currentStreak: user.currentStreak,
+    };
+  }
+
+  async logout(userId: string): Promise<void> {
+    this.rateLimits.clearUser(userId);
   }
 
   private buildAuthResult(user: { id: string; email: string; displayName: string }): AuthResult {
