@@ -13,6 +13,12 @@ config({ path: source });
 
 const apiBaseUrl = process.env.API_BASE_URL ?? 'http://localhost:3000/api/v1';
 const production = (process.env.NODE_ENV ?? '').trim() === 'production';
+const aiEnabledRaw = process.env.AI_ENABLED;
+// Default aiEnabled to true unless AI_ENABLED=false was explicitly set.
+// This means the AI buttons stay visible even when NODE_ENV=production,
+// so the user can confirm the wiring manually. Set AI_ENABLED=false to opt out.
+const aiEnabled =
+  aiEnabledRaw === undefined ? true : aiEnabledRaw === 'true';
 
 const outPath = join(projectRoot, 'src', 'environments', 'environment.local.ts');
 const content =
@@ -20,6 +26,7 @@ const content =
   `export const environment = {\n` +
   `  production: ${production},\n` +
   `  apiBaseUrl: ${JSON.stringify(apiBaseUrl)},\n` +
+  `  aiEnabled: ${aiEnabled},\n` +
   `};\n`;
 
 writeFileSync(outPath, content, 'utf8');

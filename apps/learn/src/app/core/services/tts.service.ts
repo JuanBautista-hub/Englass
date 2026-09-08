@@ -35,6 +35,39 @@ export class TtsService {
     return this.synth?.getVoices() ?? [];
   }
 
+  async listVoicesFor(lang = 'en'): Promise<SpeechSynthesisVoice[]> {
+    const synth = this.synth;
+    if (!synth) {
+      return [];
+    }
+    let voices = synth.getVoices();
+    if (voices.length === 0) {
+      voices = await this.waitForVoices();
+    }
+    const wanted = lang.toLowerCase();
+    return voices.filter((v) => v.lang.toLowerCase().startsWith(wanted));
+  }
+
+  preferredVoiceName(): string {
+    try {
+      return window.localStorage.getItem('tts.preferredVoice') ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  setPreferredVoice(voiceName: string): void {
+    try {
+      if (voiceName) {
+        window.localStorage.setItem('tts.preferredVoice', voiceName);
+      } else {
+        window.localStorage.removeItem('tts.preferredVoice');
+      }
+    } catch {
+      // ignore storage errors (private mode, etc.)
+    }
+  }
+
   async pickVoice(lang = 'en'): Promise<SpeechSynthesisVoice | null> {
     const synth = this.synth;
     if (!synth) {
@@ -46,6 +79,13 @@ export class TtsService {
     }
     const wanted = lang.toLowerCase();
     const matches = voices.filter((v) => v.lang.toLowerCase().startsWith(wanted));
+    const preferred = this.preferredVoiceName();
+    if (preferred) {
+      const found = matches.find((v) => v.name === preferred);
+      if (found) {
+        return found;
+      }
+    }
     if (matches.length === 0) {
       const anyEnglish = voices.find((v) => v.lang.toLowerCase().startsWith('en'));
       return anyEnglish ?? voices[0] ?? null;
