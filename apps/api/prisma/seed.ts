@@ -9,7 +9,212 @@ interface SeedCard {
   definition: string;
   example: string;
   translation: string;
-  explanationEs: string;
+  explanationEs?: string;
+}
+
+type Category =
+  | 'sustantivo'
+  | 'verbo'
+  | 'adjetivo'
+  | 'adverbio'
+  | 'pronombre'
+  | 'preposicion'
+  | 'conjuncion'
+  | 'articulo'
+  | 'numero'
+  | 'pais'
+  | 'gentilicio'
+  | 'saludo'
+  | 'fonema'
+  | 'regla'
+  | 'otro';
+
+interface RichExplanation {
+  category: Category;
+  ipa?: string;
+  plural?: string;
+  tip?: string;
+}
+
+const COUNTRIES = new Set([
+  'Mexico', 'Argentina', 'Colombia', 'Chile', 'Spain', 'the United States',
+  'France', 'Japan', 'Germany', 'Italy', 'Brazil', 'Canada', 'Peru',
+]);
+
+const NUMBERS = new Set([
+  'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+  'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen',
+  'eighteen', 'nineteen', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy',
+  'eighty', 'ninety', 'hundred', 'thousand', 'million', 'billion',
+]);
+
+const GREETINGS = new Set([
+  'hello', 'good morning', 'good afternoon', 'good evening', 'good night',
+  'goodbye', 'see you', 'how are you?', 'please', 'thank you', 'thanks',
+  "you're welcome", 'sorry', 'excuse me', 'no problem',
+]);
+
+const PREPOSITIONS = new Set([
+  'on', 'in', 'at', 'to', 'from', 'with', 'without', 'for', 'of', 'about',
+  'under', 'over', 'between', 'through', 'during', 'before', 'after', 'until',
+  'since', 'against', 'toward', 'behind', 'beside', 'beyond', 'within',
+]);
+
+const ARTICLES = new Set(['a', 'an', 'the']);
+
+const CONJUGATIONS: Record<string, string> = {
+  'to be': 'am / is / are',
+  'to have': 'have / has',
+  'to do': 'do / does',
+  'to go': 'go / goes',
+  'to want': 'want / wants',
+  'to need': 'need / needs',
+  'to like': 'like / likes',
+  'to make': 'make / makes',
+  'to eat': 'eat / eats',
+  'to drink': 'drink / drinks',
+  'to sleep': 'sleep / sleeps',
+  'to work': 'work / works',
+  'to learn': 'learn / learns',
+  'to speak': 'speak / speaks',
+};
+
+const IPA_RX = /\/(?:[^/]+)\//;
+
+function detectCategory(card: SeedCard): Category {
+  const term = card.term.trim();
+  const def = card.definition.toLowerCase();
+  if (COUNTRIES.has(term)) return 'pais';
+  if (term.endsWith('an') || term.endsWith('ese') || term.endsWith('ish') ||
+      term.endsWith('ch') || term.endsWith('e') || def.includes('persona de')) {
+    return 'gentilicio';
+  }
+  if (NUMBERS.has(term) || def.startsWith('el número')) return 'numero';
+  if (GREETINGS.has(term)) return 'saludo';
+  if (PREPOSITIONS.has(term) || def.startsWith('se usa ') && (term === 'on' || term === 'in' || term === 'at')) {
+    return 'preposicion';
+  }
+  if (ARTICLES.has(term)) return 'articulo';
+  if (term.startsWith('to ')) return 'verbo';
+  if (def.startsWith('se usa') || def.startsWith('los plurales') || def.includes('regla')) return 'regla';
+  if (IPA_RX.test(card.definition) || def.startsWith('sonido') || def.startsWith('primera vocal') ||
+      def.startsWith('segunda vocal') || def.startsWith('tercera vocal') ||
+      def.startsWith('cuarta vocal') || def.startsWith('quinta vocal')) {
+    return 'fonema';
+  }
+  if (def.startsWith('plural')) return 'regla';
+  return 'otro';
+}
+
+function extractIpa(definition: string): string | undefined {
+  const match = definition.match(IPA_RX);
+  return match ? match[0] : undefined;
+}
+
+function buildPluralTip(card: SeedCard): string | undefined {
+  const def = card.definition.toLowerCase();
+  if (!def.startsWith('plural')) return undefined;
+  const arrow = card.definition.match(/[→-]/);
+  if (arrow) {
+    return `Aprende la regla completa: ${card.definition.replace(/\.$/, '')}.`;
+  }
+  return undefined;
+}
+
+function buildRichExplanation(card: SeedCard): RichExplanation {
+  const category = detectCategory(card);
+  const ipa = extractIpa(card.definition);
+
+  let tip: string | undefined;
+  switch (category) {
+    case 'verbo': {
+      const conj = CONJUGATIONS[card.term];
+      if (conj) {
+        tip = `Conjugación en presente simple: ${conj}. Se conjuga añadiendo -s en 3.ª persona (he/she/it).`;
+      } else {
+        tip = `Recuerda añadir -s en 3.ª persona del singular (he/she/it ${card.term}s) y -ing para gerundio (${card.term}ing).`;
+      }
+      break;
+    }
+    case 'preposicion':
+      tip = `Las preposiciones en inglés no siempre se traducen igual; memoriza los casos de uso más comunes (tiempo y lugar).`;
+      break;
+    case 'articulo':
+      tip = `«A» se usa antes de sonido de consonante; «an», antes de sonido de vocal (incluso si la letra es consonante, ej. «an hour»).`;
+      break;
+    case 'numero':
+      tip = `Los números cardinales (one, two, three…) se usan para contar; los ordinales (first, second, third…) para ordenar.`;
+      break;
+    case 'pais':
+      tip = `En inglés, los países suelen llevar «the» (the United States, the Netherlands) y NO se usa artículo con la mayoría (Mexico, France).`;
+      break;
+    case 'gentilicio':
+      tip = `Los gentilicios se escriben con mayúscula en inglés (She is Mexican). El plural se forma con -s/-es (Mexicans).`;
+      break;
+    case 'saludo':
+      tip = `Formal vs. informal: «good morning/afternoon/evening» son formales; «hello/hi/hey» soninformales.`;
+      break;
+    case 'fonema':
+      tip = `Escucha el audio (🔊) varias veces e intenta repetir en voz alta; la repetición mejora la pronunciación.`;
+      break;
+    case 'regla':
+      tip = buildPluralTip(card) ?? 'Practica con ejemplos propios para fijar la regla.';
+      break;
+    case 'sustantivo':
+      tip = `Forma el plural siguiendo la regla general (+s / +es). Excepciones comunes: child→children, man→men, woman→women.`;
+      break;
+    case 'adjetivo':
+      tip = `En inglés, los adjetivos son invariables (no cambian para plural ni género): «a tall boy», «tall boys».`;
+      break;
+    default:
+      tip = undefined;
+  }
+
+  return { category, ipa, tip };
+}
+
+function buildExplanation(card: SeedCard): string {
+  const rich = buildRichExplanation(card);
+  const sentences: string[] = [];
+
+  const catLabel: Record<Category, string> = {
+    sustantivo: 'sustantivo',
+    verbo: 'verbo',
+    adjetivo: 'adjetivo',
+    adverbio: 'adverbio',
+    pronombre: 'pronombre',
+    preposicion: 'preposición',
+    conjuncion: 'conjunción',
+    articulo: 'artículo',
+    numero: 'número',
+    pais: 'país',
+    gentilicio: 'gentilicio',
+    saludo: 'saludo / cortesía',
+    fonema: 'fonema / sonido',
+    regla: 'regla gramatical',
+    otro: 'término',
+  };
+
+  const intro = rich.category === 'fonema'
+    ? `«${card.term}» representa el sonido ${rich.ipa ?? ''} en inglés.`
+    : `«${card.term}» es un${['a', 'e', 'i', 'o', 'u'].includes(catLabel[rich.category][0]) ? 'a' : 'o'} ${catLabel[rich.category]} y se traduce como «${card.translation}».`.replace('un o ', 'un ').replace('una a ', 'una ');
+
+  sentences.push(intro.trim());
+
+  if (card.definition) {
+    const def = card.definition.endsWith('.') ? card.definition : `${card.definition}.`;
+    sentences.push(def);
+  }
+
+  if (rich.tip) {
+    sentences.push(`💡 ${rich.tip}`);
+  }
+
+  if (card.example) {
+    sentences.push(`Ejemplo: «${card.example}».`);
+  }
+
+  return sentences.join(' ');
 }
 
 interface SeedLesson {
@@ -468,6 +673,7 @@ async function main(): Promise<void> {
           });
       let ordinal = 0;
       for (const card of lesson.cards) {
+        const explanationEs = card.explanationEs ?? buildExplanation(card);
         await prisma.vocabularyCard.upsert({
           where: { lessonId_ordinal: { lessonId: lessonRow.id, ordinal } },
           create: {
@@ -477,7 +683,7 @@ async function main(): Promise<void> {
             definition: card.definition,
             example: card.example,
             translation: card.translation,
-            explanationEs: card.explanationEs,
+            explanationEs,
             level: lesson.level,
           },
           update: {
@@ -485,7 +691,7 @@ async function main(): Promise<void> {
             definition: card.definition,
             example: card.example,
             translation: card.translation,
-            explanationEs: card.explanationEs,
+            explanationEs,
             level: lesson.level,
           },
         });
