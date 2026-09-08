@@ -231,6 +231,10 @@ interface BilingualPlayback {
       <p class="text-slate-600">Loading…</p>
     } @else {
       <p class="text-slate-600">Lesson not found.</p>
+      <a
+        routerLink="/lessons"
+        class="inline-block mt-2 bg-slate-900 text-white px-3 py-1.5 rounded-md text-sm font-medium hover:bg-slate-700 no-underline"
+      >Go to catalogue</a>
     }
   `,
 })

@@ -51,6 +51,16 @@ export class LessonsController {
     return this.lessons.list(req.user.id);
   }
 
+  @Get('grouped')
+  async grouped(@Req() req: AuthenticatedRequest) {
+    const rows = await this.lessons.listOwnedByLevel(req.user.id);
+    if (rows.length === 0) {
+      await this.lessons.autoEnrollAllForUser(req.user.id);
+      return this.lessons.listOwnedByLevel(req.user.id);
+    }
+    return rows;
+  }
+
   @Get(':id')
   findOne(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.lessons.findOne(id, req.user.id);

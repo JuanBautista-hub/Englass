@@ -76,6 +76,25 @@ export interface CatalogLevelGroup {
   lessons: CatalogLevelLesson[];
 }
 
+export type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
+
+export interface OwnedLessonSummary {
+  id: string;
+  title: string;
+  description: string | null;
+  level: string;
+  categoryId: string;
+  cardCount: number;
+  sourceLessonId: string | null;
+  createdAt: string;
+}
+
+export interface OwnedLessonsByLevelGroup {
+  level: string;
+  order: number;
+  lessons: OwnedLessonSummary[];
+}
+
 export type Mastery = 'learning' | 'reviewing' | 'mastered';
 
 export interface DashboardLevelProgress {

@@ -2,7 +2,13 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom, Observable } from 'rxjs';
 import { environment } from '../../../environments/environment';
-import { CatalogCategoryGroup, CatalogLevelGroup, Lesson, VocabularyCard } from '../models';
+import {
+  CatalogCategoryGroup,
+  CatalogLevelGroup,
+  Lesson,
+  OwnedLessonsByLevelGroup,
+  VocabularyCard,
+} from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class LessonsService {
@@ -10,6 +16,12 @@ export class LessonsService {
 
   list(): Promise<Lesson[]> {
     return firstValueFrom(this.http.get<Lesson[]>(`${environment.apiBaseUrl}/lessons`));
+  }
+
+  listGrouped(): Promise<OwnedLessonsByLevelGroup[]> {
+    return firstValueFrom(
+      this.http.get<OwnedLessonsByLevelGroup[]>(`${environment.apiBaseUrl}/lessons/grouped`),
+    );
   }
 
   get(id: string): Promise<Lesson> {

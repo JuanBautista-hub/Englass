@@ -8,7 +8,7 @@ import {
   CatalogLevelGroup,
   CatalogLevelLesson,
   CatalogLessonSummary,
-  Lesson,
+  OwnedLessonsByLevelGroup,
 } from '../../core/models';
 import { LearningPathComponent } from './learning-path.component';
 
@@ -245,37 +245,48 @@ type CatalogView = 'level' | 'category';
       <h2 class="text-lg font-semibold text-slate-900 mb-3">My lessons</h2>
       @if (lessonsLoading()) {
         <p class="text-slate-600">Loading…</p>
-      } @else if (lessons().length === 0) {
+      } @else if (lessonsGrouped().length === 0) {
         <p class="text-slate-600">
           You haven't added any lessons yet. Pick one from the catalogue above to get started.
         </p>
       } @else {
         <div class="grid gap-3">
-          @for (l of lessons(); track l.id) {
-            <article class="bg-white border border-slate-200 rounded-lg p-4">
-              <div class="flex items-center justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="flex items-center flex-wrap gap-2">
-                    <strong class="text-slate-900">{{ l.title }}</strong>
-                    <span class="text-slate-500 text-sm">[{{ l.level }}]</span>
-                    <span class="text-slate-500 text-sm">{{ l.cards.length }} cards</span>
-                  </div>
-                  @if (l.description) {
-                    <p class="text-slate-600 text-sm mt-1">{{ l.description }}</p>
-                  }
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                  <a
-                    [routerLink]="['/study', l.id]"
-                    class="px-2.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-sm no-underline text-slate-900"
-                  >Study</a>
-                  <a
-                    [routerLink]="['/lessons', l.id]"
-                    class="px-2.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-sm no-underline text-slate-900"
-                  >Open</a>
-                </div>
+          @for (group of lessonsGrouped(); track group.level) {
+            <details class="bg-white border border-slate-200 rounded-lg p-4" open>
+              <summary class="cursor-pointer flex items-center justify-between gap-3 list-none">
+                <h3 class="text-base font-semibold text-slate-900 m-0">
+                  {{ levelLabel(group.level) }}
+                </h3>
+                <span class="text-slate-500 text-sm">{{ group.lessons.length }} lesson(s)</span>
+              </summary>
+              <div class="mt-3 grid gap-3">
+                @for (l of group.lessons; track l.id) {
+                  <article class="border-t border-slate-200 pt-3">
+                    <div class="flex items-center justify-between gap-3">
+                      <div class="min-w-0">
+                        <div class="flex items-center flex-wrap gap-2">
+                          <strong class="text-slate-900">{{ l.title }}</strong>
+                          <span class="text-slate-500 text-sm">{{ l.cardCount }} cards</span>
+                        </div>
+                        @if (l.description) {
+                          <p class="text-slate-600 text-sm mt-1">{{ l.description }}</p>
+                        }
+                      </div>
+                      <div class="flex items-center gap-2 shrink-0">
+                        <a
+                          [routerLink]="['/study', l.id]"
+                          class="px-2.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-sm no-underline text-slate-900"
+                        >Study</a>
+                        <a
+                          [routerLink]="['/lessons', l.id]"
+                          class="px-2.5 py-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-sm no-underline text-slate-900"
+                        >Open</a>
+                      </div>
+                    </div>
+                  </article>
+                }
               </div>
-            </article>
+            </details>
           }
         </div>
       }
@@ -295,7 +306,7 @@ export class LessonsPage implements OnInit {
   protected readonly enrolling = signal<Set<string>>(new Set());
   protected readonly enrolledSourceIds = signal<Set<string>>(new Set());
   protected readonly enrolledBySource = signal<Map<string, string>>(new Map());
-  protected readonly lessons = signal<Lesson[]>([]);
+  protected readonly lessonsGrouped = signal<OwnedLessonsByLevelGroup[]>([]);
   protected readonly lessonsLoading = signal(true);
   protected readonly creating = signal(false);
   protected readonly creatingBusy = signal(false);
@@ -427,14 +438,16 @@ export class LessonsPage implements OnInit {
   private async loadMyLessons(): Promise<void> {
     this.lessonsLoading.set(true);
     try {
-      const rows = await this.svc.list();
-      this.lessons.set(rows);
+      const rows = await this.svc.listGrouped();
+      this.lessonsGrouped.set(rows);
       const sourceIds = new Set<string>();
       const map = new Map<string, string>();
-      for (const l of rows) {
-        if (l.sourceLessonId) {
-          sourceIds.add(l.sourceLessonId);
-          map.set(l.sourceLessonId, l.id);
+      for (const group of rows) {
+        for (const l of group.lessons) {
+          if (l.sourceLessonId) {
+            sourceIds.add(l.sourceLessonId);
+            map.set(l.sourceLessonId, l.id);
+          }
         }
       }
       this.enrolledSourceIds.set(sourceIds);

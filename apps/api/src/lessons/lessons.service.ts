@@ -66,6 +66,23 @@ export interface CatalogLevelGroup {
   lessons: CatalogLevelLesson[];
 }
 
+export interface OwnedLessonSummary {
+  id: string;
+  title: string;
+  description: string | null;
+  level: string;
+  categoryId: string;
+  cardCount: number;
+  sourceLessonId: string | null;
+  createdAt: string;
+}
+
+export interface OwnedLessonsByLevelGroup {
+  level: string;
+  order: number;
+  lessons: OwnedLessonSummary[];
+}
+
 const LEVEL_ORDER = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const;
 const LEVEL_RANK: Record<string, number> = Object.fromEntries(
   LEVEL_ORDER.map((l, i) => [l, i]),
@@ -302,6 +319,119 @@ export class LessonsService {
         categoryName: l.category.name,
         categorySlug: l.category.slug,
         level: l.level,
+      });
+      byLevel.set(l.level, list);
+    }
+    return Array.from(byLevel.entries())
+      .sort((a, b) => {
+        const ra = LEVEL_RANK[a[0]] ?? 999;
+        const rb = LEVEL_RANK[b[0]] ?? 999;
+        return ra - rb;
+      })
+      .map(([level, items]) => ({
+        level,
+        order: LEVEL_RANK[level] ?? 999,
+        lessons: items,
+      }));
+  }
+
+  async autoEnrollAllForUser(
+    userId: string,
+    maxLevel: string = 'A1',
+  ): Promise<{ enrolled: number; skipped: number }> {
+    const rank = LEVEL_RANK[maxLevel];
+    const eligibleLevels = rank === undefined
+      ? LEVEL_ORDER.slice()
+      : LEVEL_ORDER.slice(0, rank + 1);
+
+    const catalog = await this.prisma.lesson.findMany({
+      where: { ownerId: SYSTEM_USER_ID, level: { in: [...eligibleLevels] } },
+      include: { cards: { orderBy: { ordinal: 'asc' } } },
+      orderBy: [{ level: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    if (catalog.length === 0) {
+      return { enrolled: 0, skipped: 0 };
+    }
+
+    const alreadyEnrolled = new Set(await this.listEnrolledSourceIds(userId));
+    const targets = catalog.filter((c) => !alreadyEnrolled.has(c.id));
+    const skipped = catalog.length - targets.length;
+
+    const initial = initialSrsState(new Date());
+
+    for (const source of targets) {
+      const existing = await this.prisma.lesson.findFirst({
+        where: { ownerId: userId, sourceLessonId: source.id },
+      });
+      if (existing) {
+        continue;
+      }
+      const clone = await this.prisma.lesson.create({
+        data: {
+          ownerId: userId,
+          title: source.title,
+          description: source.description,
+          level: source.level,
+          categoryId: source.categoryId,
+          sourceLessonId: source.id,
+        },
+      });
+      if (source.cards.length > 0) {
+        await this.prisma.vocabularyCard.createMany({
+          data: source.cards.map((src, idx) => ({
+            lessonId: clone.id,
+            ordinal: idx,
+            term: src.term,
+            definition: src.definition,
+            example: src.example,
+            translation: src.translation,
+            explanationEs: src.explanationEs,
+            audioKey: src.audioKey,
+            level: src.level,
+          })),
+        });
+      }
+      const clonedCards = await this.prisma.vocabularyCard.findMany({
+        where: { lessonId: clone.id },
+        select: { id: true },
+      });
+      if (clonedCards.length > 0) {
+        await this.prisma.cardProgress.createMany({
+          data: clonedCards.map((c) => ({
+            userId,
+            cardId: c.id,
+            easeFactor: initial.easeFactor,
+            intervalDays: initial.intervalDays,
+            repetitions: initial.repetitions,
+            lapses: initial.lapses,
+            dueAt: initial.dueAt,
+          })),
+        });
+      }
+    }
+
+    return { enrolled: targets.length, skipped };
+  }
+
+  async listOwnedByLevel(userId: string): Promise<OwnedLessonsByLevelGroup[]> {
+    const rows = await this.prisma.lesson.findMany({
+      where: { ownerId: userId },
+      include: { _count: { select: { cards: true } } },
+      orderBy: [{ level: 'asc' }, { createdAt: 'asc' }],
+    });
+    const byLevel = new Map<string, OwnedLessonSummary[]>();
+    for (const l of rows) {
+      const list = byLevel.get(l.level) ?? [];
+      list.push({
+        id: l.id,
+        title: l.title,
+        description: l.description,
+        level: l.level,
+        categoryId: l.categoryId,
+        cardCount: l._count.cards,
+        sourceLessonId: l.sourceLessonId,
+        createdAt: l.createdAt.toISOString(),
       });
       byLevel.set(l.level, list);
     }

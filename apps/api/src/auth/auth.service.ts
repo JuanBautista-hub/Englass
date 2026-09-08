@@ -1,7 +1,8 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { UsersService } from '../users/users.service';
+import { LessonsService } from '../lessons/lessons.service';
 import { SignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './jwt.strategy';
@@ -13,8 +14,11 @@ export interface AuthResult {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly users: UsersService,
+    private readonly lessons: LessonsService,
     private readonly jwt: JwtService,
   ) {}
 
@@ -29,6 +33,16 @@ export class AuthService {
       passwordHash,
       displayName: dto.displayName,
     });
+    try {
+      const result = await this.lessons.autoEnrollAllForUser(user.id);
+      this.logger.log(
+        `auto-enrolled user ${user.id}: ${result.enrolled} new, ${result.skipped} skipped`,
+      );
+    } catch (err: unknown) {
+      this.logger.warn(
+        `auto-enroll failed for user ${user.id}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
     return this.buildAuthResult(user);
   }
 

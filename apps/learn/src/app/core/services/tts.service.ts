@@ -23,33 +23,45 @@ export interface SpeakBilingualOptions {
   onSegment?: (segment: BilingualSegment, index: number, total: number) => void;
 }
 
-const QUOTE_REGEX = /"([^"\n]+)"|'([^'\n]+)'/g;
+const QUOTE_REGEX = /"([^"\n]+)"|'([^'\n]+)'|«([^«\n]+)»/g;
+const TIP_PREFIX_RX = /^\s*�\s*\*\s*/;
+
+export function sanitizeForTts(text: string): string {
+  return text
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+    .replace(/[«»]/g, '')
+    .replace(/→/g, ' se convierte en ')
+    .replace(/[‐-―]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 export function parseBilingual(text: string): BilingualSegment[] {
   const segments: BilingualSegment[] = [];
   let lastIndex = 0;
-  for (const match of text.matchAll(QUOTE_REGEX)) {
+  const cleaned = text.replace(TIP_PREFIX_RX, '');
+  for (const match of cleaned.matchAll(QUOTE_REGEX)) {
     const idx = match.index ?? 0;
     if (idx > lastIndex) {
-      const chunk = text.slice(lastIndex, idx);
+      const chunk = cleaned.slice(lastIndex, idx);
       if (chunk.trim().length > 0) {
-        segments.push({ text: chunk, lang: 'es' });
+        segments.push({ text: sanitizeForTts(chunk), lang: 'es' });
       }
     }
-    const inner = match[1] ?? match[2] ?? '';
+    const inner = match[1] ?? match[2] ?? match[3] ?? '';
     if (inner.trim().length > 0) {
-      segments.push({ text: inner, lang: 'en' });
+      segments.push({ text: sanitizeForTts(inner), lang: 'en' });
     }
     lastIndex = idx + match[0].length;
   }
-  if (lastIndex < text.length) {
-    const chunk = text.slice(lastIndex);
+  if (lastIndex < cleaned.length) {
+    const chunk = cleaned.slice(lastIndex);
     if (chunk.trim().length > 0) {
-      segments.push({ text: chunk, lang: 'es' });
+      segments.push({ text: sanitizeForTts(chunk), lang: 'es' });
     }
   }
-  if (segments.length === 0 && text.trim().length > 0) {
-    segments.push({ text, lang: 'es' });
+  if (segments.length === 0 && cleaned.trim().length > 0) {
+    segments.push({ text: sanitizeForTts(cleaned), lang: 'es' });
   }
   return segments;
 }
@@ -79,12 +91,27 @@ export class TtsService {
     if (voices.length === 0) {
       voices = await this.waitForVoices();
     }
-    const exact = voices.find((v) => v.lang.toLowerCase().startsWith(lang.toLowerCase()));
-    if (exact) {
-      return exact;
+    const wanted = lang.toLowerCase();
+    const matches = voices.filter((v) => v.lang.toLowerCase().startsWith(wanted));
+    if (matches.length === 0) {
+      const anyEnglish = voices.find((v) => v.lang.toLowerCase().startsWith('en'));
+      return anyEnglish ?? voices[0] ?? null;
     }
-    const anyEnglish = voices.find((v) => v.lang.toLowerCase().startsWith('en'));
-    return anyEnglish ?? voices[0] ?? null;
+    const qualityKeywords = ['natural', 'neural', 'premium', 'enhanced', 'google', 'online'];
+    const ranked = [...matches].sort((a, b) => {
+      const score = (v: SpeechSynthesisVoice): number => {
+        const n = v.name.toLowerCase();
+        let s = 0;
+        if (v.localService) s += 1;
+        for (const kw of qualityKeywords) {
+          if (n.includes(kw)) s += 10;
+        }
+        if (v.default) s += 2;
+        return s;
+      };
+      return score(b) - score(a);
+    });
+    return ranked[0] ?? null;
   }
 
   speak(text: string, options: SpeakOptions = {}): SpeakHandle | null {
@@ -131,9 +158,9 @@ export class TtsService {
 
   private speakRaw(text: string, options: SpeakOptions): SpeakHandle {
     const synth = this.synth!;
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(sanitizeForTts(text));
     utterance.lang = options.lang ?? 'en-US';
-    utterance.rate = options.rate ?? 0.9;
+    utterance.rate = options.rate ?? 0.95;
     utterance.pitch = options.pitch ?? 1;
     let resolveDone: () => void = () => {};
     let rejectDone: (reason: Error) => void = () => {};
